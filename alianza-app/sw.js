@@ -1,5 +1,5 @@
 // Caché básica para abrir la app sin conexión (las tareas viven en localStorage).
-const CACHE = 'alianza-tareas-v1';
+const CACHE = 'alianza-tareas-v2';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))));
 self.addEventListener('activate', e => e.waitUntil(

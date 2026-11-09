@@ -20,17 +20,22 @@
         <small>Coordinación de Proyectos</small>
       </div>
     </div>
-    <button class="btn btn-gold" id="btnNewTask">+ Nueva tarea</button>
+    <div class="top-actions">
+      <button class="btn btn-gold" id="btnNewTask">+ Nueva tarea</button>
+      <button class="icon-btn" id="btnSettings" aria-label="Ajustes">⚙︎</button>
+    </div>
   </header>
+
+  <section class="cmdbar" id="cmdbar" aria-label="Barra principal de pendientes"></section>
 
   <main id="view"></main>
 
   <nav class="tabbar" id="tabbar">
     <button data-view="hoy" class="active"><span>☀️</span>Hoy</button>
     <button data-view="tablero"><span>▦</span>Tablero</button>
-    <button data-view="correo"><span>✉️</span>Correo</button>
     <button data-view="agencia"><span>✦</span>Oficina</button>
-    <button data-view="ajustes"><span>⚙︎</span>Ajustes</button>
+    <button data-view="repo"><span>🗂️</span>Repositorio</button>
+    <button data-view="correo"><span>✉️</span>Correo</button>
   </nav>
 
   <dialog id="taskDialog">
@@ -59,6 +64,7 @@
         <label>Vence<input type="date" name="due"></label>
         <label>Hora<input type="time" name="time"></label>
       </div>
+      <label>Responsable<select name="agent"></select></label>
       <label>Recordarme
         <select name="remind">
           <option value="">Sin recordatorio</option>
@@ -68,6 +74,7 @@
           <option value="1440">1 día antes</option>
         </select>
       </label>
+      <div id="taskSteps" class="task-steps"></div>
       <label>Notas<textarea name="notes" rows="3"></textarea></label>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost danger" id="btnDeleteTask" hidden>Eliminar</button>
@@ -78,6 +85,8 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="viewDialog" class="view-dialog"></dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
 

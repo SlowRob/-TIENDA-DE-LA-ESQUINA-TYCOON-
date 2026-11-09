@@ -20,10 +20,39 @@ Lo que salió al revisar tu correo (sin hacerle ningún cambio):
 - El prompt "PROMT CREACIÓN DE COMUNICADOS - AGI" define el tono, el formato para WhatsApp, la paleta (**azul #1A3867**, **dorado #95762F**, **blanco**), la regla de **no modificar los logos** y el bloque de **trazabilidad**. El agente redactor sigue esas reglas tal cual.
 - La app trae precargados 8 pendientes reales de la bandeja de entrada (sin datos personales). Por ejemplo: el empalme de Proyectos Capital del 11 de noviembre, la visita a Santana del 18 de noviembre y la circular de Castilla Living.
 
-## 2. Diseño
+## 2. Flujo de trabajo
+
+1. **Barra principal** (arriba en Hoy, Tablero, Oficina y Repositorio). Ahí dejas cualquier pendiente: una nota, una lista o un correo pegado completo.
+2. **Valeria (coordinadora) lo reparte.**
+   - Con Claude, separa los pendientes, detecta el proyecto y la fecha, elige el agente y escribe los pasos de **cómo proceder**.
+   - Sin clave de Claude, usa reglas por palabras clave.
+3. **Cada agente tiene su bandeja.** Si marcas "Que el agente empiece de inmediato", el agente toma el pendiente y trabaja solo. Si no, lo procesas tú desde su ficha en la Oficina.
+4. **Revisión.** Lo que entrega un agente queda *En revisión* en el Tablero y como borrador en el **Repositorio**, hasta que lo apruebas.
+5. **Recordatorios.**
+   - Cada pendiente con fecha tiene su aviso.
+   - Al abrir la app recibes el resumen del día.
+   - Los pendientes sin fecha que llevan más de 3 días quietos te generan un aviso.
+   - En **Hoy**, la tarjeta "Valeria te recomienda" muestra qué hacer primero y cómo.
+
+### Derechos de petición (Daniela, asesora jurídica)
+- **Detecta** los derechos de petición, tutelas y PQR que dejas en la barra.
+- **Calcula el plazo legal** en días hábiles (Ley 1755 de 2015: 10, 15 o 30 días), descontando fines de semana y festivos de Colombia de 2026 y 2027.
+- **Fija una fecha interna** 2 días hábiles antes del vencimiento legal y programa el recordatorio.
+- **Redacta el borrador de respuesta**: clasificación, puntos solicitados, respuesta punto por punto y soportes que hay que reunir.
+- **Revisa el borrador que envió un delegado**: veredicto, si responde cada punto, observaciones y una versión corregida.
+- Todo es un **borrador para revisión humana**. Nada se envía.
+
+### Repositorio
+- **Entregables**: cada texto, borrador o pieza gráfica que produce un agente se guarda solo, en estado *Borrador* o *Aprobado*.
+  - Se puede filtrar por tipo, agente, proyecto o texto.
+  - Cada entregable se puede abrir, copiar o descargar (.txt o .png).
+- **Actividades realizadas**: el historial de tareas terminadas, con su fecha.
+- Se guarda en el navegador (IndexedDB). Desde *Ajustes → Exportar respaldo completo* bajas todo en un archivo JSON, con tareas, proyectos y entregables.
+
+## 3. Diseño
 
 - **Colores:** fondo blanco, azul institucional para la estructura y dorado solo como acento.
-- **Navegación:** 5 pestañas fijas abajo, como en una app de celular: Hoy · Tablero · Correo · Oficina · Ajustes.
+- **Navegación:** 5 pestañas fijas abajo, como en una app de celular: Hoy · Tablero · Oficina · Repositorio · Correo (Ajustes en el engranaje de arriba).
 - Botón dorado **"+ Nueva tarea"** siempre visible.
 - Se puede instalar en el celular (PWA): en Safari, *Compartir → Agregar a inicio*.
 
@@ -43,6 +72,7 @@ Al tocar un agente se abre su ficha con tres pestañas: **Actividad**, **Chat** 
 | Tomás | Redactor de comunicados para WhatsApp con trazabilidad (prompt AGI) | Claude |
 | Lucía | Redactora de respuestas a correos (solo borradores) | Claude |
 | Mateo | Diseñador de piezas 1080×1350 con los logos originales sin alterar | ChatGPT |
+| Daniela | Asesora jurídica: derechos de petición, tutelas y PQR (borrador o revisión) | Claude |
 | Sofía | Archivista: carpetas, pendientes y logos del correo | Gmail · solo lectura |
 | Andrés | Agenda: recordatorios, Google Calendar y archivo .ics | Calendario |
 
@@ -56,12 +86,12 @@ Abajo de la oficina, el registro muestra cada misión con su hora. Tomás puede 
 ### Logos
 En **Correo**, abre la carpeta de un proyecto y pulsa **"Buscar logos en esta carpeta"**. Luego eliges cuál usar. También puedes subirlo desde el equipo. Los logos se ponen sobre un recuadro blanco, sin cambiar su proporción ni sus colores.
 
-## 3. Seguridad y permisos
+## 4. Seguridad y permisos
 - **Gmail:** la app solo pide el permiso `gmail.readonly`. Con ese permiso Google **no deja** enviar, responder, borrar, archivar, etiquetar ni marcar como leído. Tu buzón no cambia.
 - Las claves de Claude y OpenAI, las tareas y los logos se guardan **solo en tu navegador** (localStorage). No hay servidor.
 - Úsala en un equipo personal. Para usarla con todo el equipo conviene montar un pequeño servidor que guarde las claves (ver "Próximos pasos").
 
-## 4. Puesta en marcha
+## 5. Puesta en marcha
 1. Publica la carpeta `alianza-app/` en un servicio de hosting estático, por ejemplo GitHub Pages o Netlify. También puedes probarla en tu equipo con `python3 -m http.server` dentro de la carpeta y abrir `http://localhost:8000`.
 2. **Ajustes → Claude:** pega tu clave de Anthropic (console.anthropic.com).
 3. **Ajustes → ChatGPT:** pega tu clave de OpenAI (platform.openai.com).
@@ -71,7 +101,7 @@ En **Correo**, abre la carpeta de un proyecto y pulsa **"Buscar logos en esta ca
    - Pega el Client ID en la app.
 5. En **Hoy**, pulsa **"Activar recordatorios"**.
 
-## 5. Próximos pasos sugeridos
+## 6. Próximos pasos sugeridos
 - Mostrar automáticamente como tareas los correos con las etiquetas *PENDIENTES VALIDAR* y *PENDIENTES COMITE*, siempre en solo lectura.
-- Un servidor ligero para guardar las claves y sincronizar las tareas entre el celular y el computador.
+- Un servidor ligero, o Google Drive, para guardar las claves, sincronizar tareas y repositorio entre el celular y el computador, y compartirlos con los delegados.
 - Leer los logos de Google Drive además de los del correo.
