@@ -54,7 +54,7 @@
 
   let tasks = store.get('tasks', null);
   if (!tasks) {
-    tasks = SEED_TASKS.map(t => ({ id: uid(), status: 'todo', created: Date.now(), due: '', time: '', remind: '', ...t }));
+    tasks = window.claude ? [] : SEED_TASKS.map(t => ({ id: uid(), status: 'todo', created: Date.now(), due: '', time: '', remind: '', ...t }));
     store.set('tasks', tasks);
   }
   let projects = store.get('projects', DEFAULT_PROJECTS);
@@ -65,7 +65,102 @@
   });
   let logos = store.get('logos', []); // [{name, project, dataUrl}]
   const ui = { view: 'hoy', filterProject: '', search: '', agent: 'comunicado', mailLabel: null };
-  const saveTasks = () => store.set('tasks', tasks);
+  const saveTasks = () => { store.set('tasks', tasks); pushTasks(); };
+
+  // ---------------------------------------------------------------- Modo publicado en claude.ai
+  // Dentro de claude.ai la app usa: Claude de tu cuenta (sample), Gmail por conector (solo lectura),
+  // base de datos compartida (db) para sincronizar celular y computador, assets para imágenes y downloads.
+  const HOST_FRAME = !!(window.claude && typeof window.claude.use === 'function');
+  const HOST = { sample: null, db: null, mcp: null, downloads: null, assets: null, ready: false };
+  const BOOT = Date.now();
+  const hasClaude = () => !!HOST.sample || (!HOST_FRAME && !!settings.claudeKey);
+  const hasOpenAI = () => !HOST_FRAME && !!settings.openaiKey;
+
+  function dataUrlToBlob(u) {
+    const [head, b64] = u.split(',');
+    const mime = (head.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+    const bin = atob(b64); const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+
+  async function saveFile(filename, data) {
+    if (HOST.downloads) {
+      try { await HOST.downloads.save({ filename, data }); } catch (e) { if (e?.code !== 'declined') toast('No se pudo descargar: ' + (e?.message || e)); }
+      return;
+    }
+    if (HOST_FRAME) return toast('Las descargas no están disponibles en esta vista.');
+    const a = document.createElement('a');
+    a.href = typeof data === 'string' && data.startsWith('data:') ? data : URL.createObjectURL(data instanceof Blob ? data : new Blob([data]));
+    a.download = filename; a.click();
+  }
+
+  // Confirmación en el mismo botón (los diálogos del navegador no existen dentro de claude.ai).
+  function confirmClick(btn, label, fn) {
+    if (btn.dataset.armed) { delete btn.dataset.armed; return fn(); }
+    const old = btn.textContent; btn.dataset.armed = '1'; btn.textContent = label;
+    setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = old; } }, 3500);
+  }
+
+  const sync = { tasks: new Map(), ready: false, queue: Promise.resolve() };
+  const dbFail = e => { console.warn(e); if (e?.code === 'quota_exceeded') toast('La base de datos está llena: elimina entregables antiguos.'); else if (e?.code === 'invalid_argument') toast('No tienes permiso para guardar cambios aquí.'); };
+  function pushTasks() {
+    if (!HOST.db || !sync.ready) return;
+    sync.queue = sync.queue.then(async () => {
+      const col = HOST.db.collection('tasks'), seen = new Set();
+      for (const t of tasks) {
+        seen.add(t.id);
+        const j = JSON.stringify(t);
+        if (sync.tasks.get(t.id) !== j) { sync.tasks.set(t.id, j); await col.doc(t.id).set(JSON.parse(j)).catch(dbFail); }
+      }
+      for (const id of [...sync.tasks.keys()]) if (!seen.has(id)) { sync.tasks.delete(id); await col.doc(id).delete().catch(dbFail); }
+    });
+  }
+  function softRender() {
+    if ($('#taskDialog').open || $('#viewDialog').open) return;
+    if (ui.view === 'agencia') return refreshOffice();
+    const a = document.activeElement;
+    if (a && $('#view').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    renderView();
+  }
+
+  async function bootHost() {
+    if (!HOST_FRAME) return;
+    const [sample, db, mcp, downloads, assets] = await Promise.all(['sample', 'db', 'mcp', 'downloads', 'assets'].map(n => window.claude.use(n).catch(() => null)));
+    Object.assign(HOST, { sample, db, mcp, downloads, assets, ready: true });
+    if (db) {
+      const timer = setTimeout(() => { if (!sync.ready) toast('Sin conexión con la base de datos: los cambios pueden no estar al día.'); }, 10000);
+      db.collection('tasks').onSnapshot(snap => {
+        clearTimeout(timer);
+        const next = snap.docs.map(d => JSON.parse(JSON.stringify(d.data())));
+        const m = new Map(next.map(t => [t.id, JSON.stringify(t)]));
+        const first = !sync.ready;
+        if (first) {
+          // Lo creado en esta visita antes de conectar se conserva.
+          tasks.filter(t => t.created >= BOOT && !m.has(t.id)).forEach(t => next.push(t));
+        }
+        const same = !first && m.size === sync.tasks.size && [...m].every(([k, v]) => sync.tasks.get(k) === v);
+        sync.tasks = m; sync.ready = true;
+        if (same) return;
+        tasks = next; store.set('tasks', tasks);
+        if (first) pushTasks();
+        softRender();
+      }, e => { clearTimeout(timer); dbFail(e); });
+      db.doc('meta/log').onSnapshot(s => {
+        const items = s.exists ? (s.data().items || []) : [];
+        office.log = JSON.parse(JSON.stringify(items));
+        if (ui.view === 'agencia') { renderLog(); }
+      }, dbFail);
+      db.doc('meta/config').onSnapshot(s => {
+        if (s.exists && Array.isArray(s.data().projects) && s.data().projects.length) { projects = [...s.data().projects]; store.set('projects', projects); }
+      }, dbFail);
+      db.collection('logos').onSnapshot(snap => {
+        logos = snap.docs.map(d => ({ id: d.id, ...d.data() })).map(l => ({ ...l, dataUrl: l.url }));
+        if (ui.view === 'ajustes') softRender();
+      }, dbFail);
+    }
+    render();
+  }
 
   // ---------------------------------------------------------------- Repositorio (IndexedDB)
   // Guarda todo lo que produce el equipo: textos, borradores y piezas gráficas.
@@ -83,12 +178,35 @@
         const req = fn(st); t.oncomplete = () => ok(req?.result); t.onerror = () => ko(t.error);
       });
     };
-    return {
+    const local = {
       put: item => tx('readwrite', s => s.put(item)),
       get: id => tx('readonly', s => s.get(id)),
       all: () => tx('readonly', s => s.getAll()).then(l => (l || []).sort((a, b) => b.date - a.date)),
       del: id => tx('readwrite', s => s.delete(id)),
       async update(id, patch) { const it = await this.get(id); if (it) await this.put({ ...it, ...patch }); }
+    };
+    // En claude.ai: base compartida + imágenes en assets.
+    const shared = {
+      async put(item) {
+        const it = { ...item };
+        if (it.type === 'image' && String(it.content).startsWith('data:')) {
+          if (!HOST.assets) throw new Error('No se pueden guardar imágenes en esta vista.');
+          const a = await HOST.assets.upload(dataUrlToBlob(it.content));
+          it.content = a.url; it.assetId = a.id;
+        }
+        if (it.type === 'text' && it.content.length > 200000) it.content = it.content.slice(0, 200000);
+        await HOST.db.collection('entregables').doc(it.id).set(JSON.parse(JSON.stringify(it)));
+        return it;
+      },
+      async get(id) { const d = await HOST.db.doc('entregables/' + id).get(); return d.exists ? { ...d.data() } : null; },
+      async all() { const q = await HOST.db.collection('entregables').orderBy('date', 'desc').limit(500).get(); return q.docs.map(d => ({ ...d.data() })); },
+      async del(id) { const it = await this.get(id); await HOST.db.doc('entregables/' + id).delete(); if (it?.assetId && HOST.assets) HOST.assets.delete(it.assetId).catch(() => {}); },
+      async update(id, patch) { await HOST.db.doc('entregables/' + id).update(patch); }
+    };
+    const pick = () => (HOST.db ? shared : local);
+    return {
+      put: i => pick().put(i), get: id => pick().get(id), all: () => pick().all(),
+      del: id => pick().del(id), update: (id, p) => pick().update(id, p)
     };
   })();
 
@@ -159,10 +277,7 @@
       lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(t.title)}`, `TRIGGER:-PT${mins}M`, 'END:VALARM', 'END:VEVENT');
     });
     lines.push('END:VCALENDAR');
-    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = filename; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    saveFile(filename, new Blob([lines.join('\r\n')], { type: 'text/calendar' }));
   }
 
   // ---------------------------------------------------------------- Recordatorios
@@ -174,7 +289,7 @@
       const d = taskDate(t); if (!d) return;
       if (now >= d.getTime() - Number(t.remind) * 60000) {
         const body = `${t.project} · ${fmtDate(t.due)}${t.time ? ' ' + t.time : ''}`;
-        if ('Notification' in window && Notification.permission === 'granted') {
+        if (!HOST_FRAME && 'Notification' in window && Notification.permission === 'granted') {
           new Notification('Pendiente: ' + t.title, { body });
         }
         toast('⏰ ' + t.title);
@@ -186,7 +301,7 @@
     if (stale) {
       stale.nudgedAt = now; changed = true;
       const step = (stale.steps && stale.steps[0]) || 'Define una fecha o un responsable.';
-      if ('Notification' in window && Notification.permission === 'granted') new Notification('Sigue pendiente: ' + stale.title, { body: 'Siguiente paso: ' + step });
+      if (!HOST_FRAME && 'Notification' in window && Notification.permission === 'granted') new Notification('Sigue pendiente: ' + stale.title, { body: 'Siguiente paso: ' + step });
     }
     if (changed) saveTasks();
   }
@@ -254,7 +369,7 @@
       ${advisorHtml()}
       <div class="toolbar" style="margin-top:12px">
         <button class="btn btn-ghost btn-sm" id="btnIcsAll">📅 Agregar pendientes al calendario (.ics)</button>
-        ${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="btnNotif">🔔 Activar recordatorios</button>' : ''}
+        ${!HOST_FRAME && 'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="btnNotif">🔔 Activar recordatorios</button>' : ''}
       </div>
       ${overdue.length ? section('⚠️ Vencidas', overdue, '') : ''}
       ${section('Hoy', dueToday, 'Nada vence hoy.')}
@@ -334,7 +449,48 @@
     return r.json();
   }
 
+  // Gmail en claude.ai: conector del usuario con 3 herramientas de solo lectura.
+  const GMAIL = 'Gmail';
+  function mcpMsg(e) {
+    const c = e?.code;
+    if (c === 'needs_reauth') return 'Reconecta Gmail en claude.ai → Ajustes → Conectores.';
+    if (c === 'server_not_connected' || c === 'selection_required') return 'Agrega o elige el conector de Gmail en claude.ai → Ajustes → Conectores.';
+    if (c === 'not_in_manifest' || c === 'approval_required' || c === 'consent_required') return 'Permite que la página lea Gmail (solo lectura) cuando aparezca el aviso.';
+    if (c === 'blocked_by_policy') return 'Tu organización bloquea este acceso a Gmail.';
+    return 'Gmail no respondió: ' + (e?.message || 'intenta de nuevo');
+  }
+  async function connectGmailHosted() {
+    try {
+      const r = await HOST.mcp.callTool(GMAIL, 'list_labels', {});
+      const labels = (r.payload && r.payload.labels) || [];
+      gmail.labels = labels
+        .filter(l => l.labelType === 'USER' || ['INBOX', 'STARRED', 'IMPORTANT'].includes(l.labelId))
+        .map(l => ({ id: l.labelId, full: l.name, name: { INBOX: 'Recibidos', STARRED: 'Destacados', IMPORTANT: 'Importantes' }[l.labelId] || l.name.replace(/^[^/]+@[^/]+\//, '') }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      gmail.token = 'mcp'; render();
+    } catch (e) { toast(mcpMsg(e)); }
+  }
+  async function openLabelHosted(id) {
+    const l = gmail.labels.find(x => x.id === id);
+    const query = { INBOX: 'in:inbox', STARRED: 'is:starred', IMPORTANT: 'is:important' }[id] || `label:${l.full.replace(/[\s/]/g, '-')}`;
+    const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query, pageSize: 20, view: 'THREAD_VIEW_SUMMARY' });
+    return ((r.payload && r.payload.threads) || []).map(th => {
+      const m = (th.messages || [])[0] || {};
+      const who = (m.addressDisplayNames || []).find(a => a.emailAddress === m.sender);
+      return { id: th.id, subject: m.subject || '(sin asunto)', from: who ? `${who.displayName} <${m.sender}>` : (m.sender || ''), date: m.date ? new Date(m.date).toLocaleString('es-CO', { timeZone: TZ }) : '', snippet: decodeEntities(m.snippet || ''), url: th.viewUrl || m.viewUrl || '' };
+    });
+  }
+  async function threadText(th) {
+    if (!(HOST.mcp && gmail.token === 'mcp')) return `Asunto: ${th.subject}\nDe: ${th.from}\nFecha: ${th.date}\n\n${th.snippet}`;
+    const r = await HOST.mcp.callTool(GMAIL, 'get_thread', { threadId: th.id, messageFormat: 'PLAIN_TEXT' });
+    const msgs = (r.payload && r.payload.messages) || [];
+    const body = msgs.map(m => `De: ${m.sender || ''} · ${m.date || ''}\n${(m.plaintextBody || m.snippet || '').trim()}`).join('\n\n-----\n\n');
+    return `Asunto: ${th.subject}\n\n${body}`.slice(0, 12000);
+  }
+
   function connectGmail() {
+    if (HOST.mcp) return connectGmailHosted();
+    if (HOST_FRAME) return toast('Gmail se está conectando a la página; intenta de nuevo en un momento.');
     if (!settings.googleClientId) { toast('Primero agrega tu Google Client ID en Ajustes.'); return setView('ajustes'); }
     if (!window.google?.accounts?.oauth2) return toast('Cargando Google… intenta de nuevo en un momento.');
     const client = google.accounts.oauth2.initTokenClient({
@@ -363,6 +519,7 @@
   async function openLabel(id) {
     ui.mailLabel = id; gmail.loading = true; gmail.threads = []; gmail.logoCandidates = []; render();
     try {
+      if (gmail.token === 'mcp') { gmail.threads = await openLabelHosted(id); gmail.loading = false; return render(); }
       const { threads = [] } = await gmailGet(`threads?labelIds=${encodeURIComponent(id)}&maxResults=20`);
       gmail.threads = await Promise.all(threads.map(async th => {
         const d = await gmailGet(`threads/${th.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`);
@@ -370,7 +527,7 @@
         const h = n => (last.payload.headers.find(x => x.name === n) || {}).value || '';
         return { id: th.id, subject: h('Subject') || '(sin asunto)', from: h('From'), date: h('Date'), snippet: decodeEntities(th.snippet || last.snippet || '') };
       }));
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(gmail.token === 'mcp' ? mcpMsg(e) : e.message); }
     gmail.loading = false; render();
   }
 
@@ -406,8 +563,9 @@
       <h1>Correo</h1><div class="gold-line"></div>
       <span class="readonly-badge">🔒 Solo lectura</span>
       <div class="card" style="margin-top:12px">
-        <p>Conecta tu Gmail para ver las carpetas de cada proyecto, detectar pendientes y tomar los logos adjuntos.</p>
-        <div class="notice">La app pide únicamente el permiso <b>gmail.readonly</b>: puede <b>leer</b>, pero Google no le permite enviar, responder, borrar, archivar ni marcar correos. Nada cambia en tu buzón.</div>
+        <p>Conecta tu Gmail para ver las carpetas de cada proyecto y enviar cualquier correo al equipo para que lo trabaje.</p>
+        ${HOST_FRAME ? '<div class="notice">Se usa tu conector de Gmail de claude.ai con tres herramientas de <b>solo lectura</b>: ver carpetas, buscar hilos y leer un hilo. La página no tiene acceso a enviar, responder, borrar, archivar ni etiquetar.</div>'
+          : '<div class="notice">La app pide únicamente el permiso <b>gmail.readonly</b>: puede <b>leer</b>, pero Google no le permite enviar, responder, borrar, archivar ni marcar correos. Nada cambia en tu buzón.</div>'}
         <button class="btn btn-primary" id="btnGmail">Conectar Gmail (solo lectura)</button>
       </div>`;
     const label = gmail.labels.find(l => l.id === ui.mailLabel);
@@ -417,7 +575,7 @@
       const cands = gmail.logoCandidates.map((c, i) => `<div class="logo-tile" data-cand="${i}"><img src="${c.dataUrl}" alt=""><div>${esc(c.name)}</div><button class="btn btn-gold btn-sm" style="margin-top:6px">Usar como logo</button></div>`).join('');
       right = `
         <div class="toolbar"><h2 style="margin:0">${esc(label.name)}</h2><span class="spacer"></span>
-          <button class="btn btn-ghost btn-sm" id="btnLogos">🖼️ Buscar logos en esta carpeta</button></div>
+          ${gmail.token === 'mcp' ? '' : '<button class="btn btn-ghost btn-sm" id="btnLogos">🖼️ Buscar logos en esta carpeta</button>'}</div>
         ${cands ? `<h2>Imágenes encontradas</h2><div class="logo-grid">${cands}</div>` : ''}
         ${gmail.loading ? '<div class="empty">Cargando…</div>' : ''}
         <div class="card" style="padding:0">${gmail.threads.map(t => `
@@ -425,8 +583,9 @@
             <div class="subj">${esc(t.subject)}</div>
             <div class="t-meta">${esc(t.from)} · ${esc(t.date)}</div>
             <div class="snip">${esc(t.snippet)}</div>
+            <button class="btn btn-gold btn-sm" data-toteam="${esc(t.id)}">✦ Enviar al equipo</button>
             <button class="btn btn-ghost btn-sm" data-totask="${esc(t.id)}">+ Crear tarea</button>
-            <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/${esc(t.id)}">Abrir en Gmail</a>
+            <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(t.url || 'https://mail.google.com/mail/u/0/#all/' + t.id)}">Abrir en Gmail</a>
           </div>`).join('') || (gmail.loading ? '' : '<div class="empty">Carpeta vacía.</div>')}
         </div>`;
     }
@@ -446,6 +605,20 @@
       const c = gmail.logoCandidates[Number(el.dataset.cand)];
       addLogo({ name: c.name, project: matchProject(c.project), dataUrl: c.dataUrl });
     });
+    root.querySelectorAll('[data-toteam]').forEach(el => el.onclick = async () => {
+      const th = gmail.threads.find(t => t.id === el.dataset.toteam);
+      const label = gmail.labels.find(l => l.id === ui.mailLabel);
+      el.disabled = true; el.textContent = 'Leyendo…';
+      try {
+        const text = await threadText(th);
+        el.textContent = 'Asignando…';
+        const created = await dispatch(text, { auto: store.get('autoRun', true), project: projects.includes(matchProject(label?.name)) && matchProject(label?.name) !== 'General / AGI' ? matchProject(label?.name) : '' });
+        created.forEach(t => { t.notes = `${t.notes}\nCorreo: ${th.url || ''}`.trim(); });
+        saveTasks();
+        el.textContent = `✓ ${created.map(t => AGENTS[t.agent].name).join(', ')}`;
+        renderCmdbar();
+      } catch (e) { el.disabled = false; el.textContent = '✦ Enviar al equipo'; toast(gmail.token === 'mcp' ? mcpMsg(e) : e.message); }
+    });
     root.querySelectorAll('[data-totask]').forEach(el => el.onclick = () => {
       const th = gmail.threads.find(t => t.id === el.dataset.totask);
       const label = gmail.labels.find(l => l.id === ui.mailLabel);
@@ -458,7 +631,17 @@
     return projects.find(p => n.includes(p.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(' (')[0])) || 'General / AGI';
   }
 
-  function addLogo(logo) {
+  async function addLogo(logo) {
+    if (HOST.db && HOST.assets) {
+      try {
+        const a = await HOST.assets.upload(dataUrlToBlob(logo.dataUrl));
+        const id = uid();
+        await HOST.db.collection('logos').doc(id).set({ name: logo.name, project: logo.project, url: a.url, assetId: a.id });
+        logos = [...logos, { id, name: logo.name, project: logo.project, url: a.url, assetId: a.id, dataUrl: a.url }];
+        toast(`Logo guardado para ${logo.project}. Se usará sin modificaciones.`);
+      } catch (e) { toast('No se pudo guardar el logo: ' + (e?.message || e)); }
+      return;
+    }
     logos = logos.filter(l => !(l.project === logo.project && l.name === logo.name));
     logos.push(logo);
     if (!store.set('logos', logos)) logos.pop();
@@ -537,6 +720,17 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
 - Texto Final Aprobado: (pendiente de aprobación)`;
 
   async function askClaude(system, user) {
+    if (HOST.sample) {
+      try {
+        const r = await HOST.sample(`${system}\n\n=====\n\n${user}`, { modelTier: 'default' });
+        return r.text;
+      } catch (e) {
+        if (e?.code === 'not_granted') throw new Error('Permite que la página use Claude (aparece un aviso de permiso).');
+        if (e?.code === 'rate_limited') throw new Error('Claude está ocupado: intenta en un minuto.');
+        throw new Error(e?.message || 'Claude no respondió.');
+      }
+    }
+    if (HOST_FRAME) throw new Error('Claude aún no está disponible en esta vista.');
     if (!settings.claudeKey) throw new Error('Agrega tu clave de Claude (Anthropic) en Ajustes.');
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -595,7 +789,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       <label>Título de la pieza<input name="titulo" value="${esc(last.titulo)}"></label>
       <label>Texto de la pieza<textarea name="texto" rows="5">${esc(last.texto)}</textarea></label>
       <label>Imagen de fondo (ChatGPT)<input name="escena" placeholder="Ej: fachada de conjunto residencial moderno al atardecer" value="${esc(last.escena)}"></label>
-      <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="useAI" style="width:auto;margin:0" ${last.useAI === false ? '' : 'checked'}> Generar imagen con ChatGPT (sin IA se usa la plantilla institucional)</label>
+      ${hasOpenAI() ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="useAI" style="width:auto;margin:0" ${last.useAI === false ? '' : 'checked'}> Generar imagen con ChatGPT (sin IA se usa la plantilla institucional)</label>` : `<p class="sub">${HOST_FRAME ? 'En esta versión Mateo usa la plantilla institucional (ChatGPT se activa en la versión instalada con tu clave de OpenAI).' : 'Agrega tu clave de OpenAI en Ajustes para generar fondos con ChatGPT; mientras tanto se usa la plantilla institucional.'}</p>`}
       <div class="notice">Regla absoluta: los logos se colocan <b>tal como son</b> (sin estirar, recolorear ni recortar). La IA solo crea la imagen de fondo.</div>
       <h2>Logos de ${esc(last.project || projects[0])}</h2>
       <div class="logo-grid" id="logoPick"></div>
@@ -639,6 +833,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     office.log.unshift({ t: Date.now(), agent, text, ok });
     office.log = office.log.slice(0, 60);
     store.set('office.log', office.log);
+    if (HOST.db) { const items = JSON.parse(JSON.stringify(office.log)); sync.queue = sync.queue.then(() => HOST.db.doc('meta/log').set({ items }).catch(dbFail)); }
   }
   function saveResults() {
     // Las imágenes ocupan mucho; se guarda solo el texto.
@@ -744,7 +939,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       ${floor}${walls}${items.map(i => i[1]).join('')}</svg>`;
   }
 
-  const live = () => !!(settings.claudeKey || settings.openaiKey);
+  const live = () => hasClaude();
   const hhmmss = t => new Date(t).toLocaleTimeString('es-CO', { hour12: false, timeZone: TZ });
 
   views.agencia = () => `
@@ -793,7 +988,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     });
     renderStrip();
   }
-  function refreshOffice() { if (ui.view !== 'agencia') return; renderScene(); renderLog(); if (office.open) renderPanel(); }
+  function refreshOffice() { if (ui.view !== 'agencia') return; renderScene(); renderLog(); const p = $('#panel'); if (office.open && !(p && p.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderPanel(); }
 
   function openAgent(k) {
     office.open = office.open === k ? null : k;
@@ -851,7 +1046,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
           <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(googleCalendarUrl(t))}">📅</a></div>`).join('') || '<div class="empty">No hay pendientes con fecha.</div>'}
         <div class="toolbar" style="margin-top:10px">
           <button class="btn btn-gold btn-sm" id="agIcs">Exportar todo (.ics)</button>
-          ${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="agNotif">🔔 Activar avisos</button>' : ''}
+          ${!HOST_FRAME && 'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="agNotif">🔔 Activar avisos</button>' : ''}
         </div>`;
     }
     const r = office.results[k];
@@ -859,7 +1054,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     const q = queueOf(k);
     const queue = q.length ? `<h4>Bandeja (${q.length})</h4>${q.map(t => `<div class="mini-task"><div><b>${esc(t.title)}</b><small>${esc(t.project)}${t.due ? ' · vence ' + esc(fmtDate(t.due)) : ''}${t.mode === 'revision' ? ' · revisión' : ''}</small></div>
         <button class="btn btn-gold btn-sm" data-run="${esc(t.id)}" ${!canRun(k) || working ? 'disabled' : ''}>Procesar</button></div>`).join('')}` : '';
-    const needKey = !canRun(k) ? '<div class="notice">Agrega tu clave de Claude en Ajustes para que pueda trabajar.</div>' : '';
+    const needKey = !canRun(k) ? `<div class="notice">${HOST_FRAME ? 'Claude se está conectando a esta página…' : 'Agrega tu clave de Claude en Ajustes para que pueda trabajar.'}</div>` : '';
     let result = '';
     if (r) {
       result = `<h4>Última entrega</h4>` + (r.type === 'image'
@@ -894,7 +1089,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     const r = office.results[k];
     if (r) {
       const rc = $('#rCopy', panel); if (rc) rc.onclick = () => navigator.clipboard.writeText(r.text).then(() => toast('Copiado.'));
-      const rd = $('#rDown', panel); if (rd) rd.onclick = () => { const a = document.createElement('a'); a.href = r.dataUrl; a.download = `pieza-${(r.project || 'alianza').replace(/\W+/g, '-').toLowerCase()}.png`; a.click(); };
+      const rd = $('#rDown', panel); if (rd) rd.onclick = () => saveFile(`pieza-${(r.project || 'alianza').replace(/\W+/g, '-').toLowerCase()}.png`, dataUrlToBlob(r.dataUrl));
       const rs = $('#rDesign', panel); if (rs) rs.onclick = () => {
         const titulo = (r.text.match(/T[ÍI]TULO:\s*(.+)/i) || [])[1] || '';
         const texto = ((r.text.match(/MENSAJE:\s*([\s\S]*?)(?:\n\s*FIRMA:|REGISTRO DE TRAZABILIDAD)/i) || [])[1] || r.text).trim();
@@ -920,14 +1115,14 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       form.logoFile.onchange = () => {
         const f = form.logoFile.files[0]; if (!f) return;
         const rd = new FileReader();
-        rd.onload = () => { addLogo({ name: f.name, project: form.project.value, dataUrl: rd.result }); paintLogos(); };
+        rd.onload = async () => { await addLogo({ name: f.name, project: form.project.value, dataUrl: rd.result }); paintLogos(); };
         rd.readAsDataURL(f);
       };
     }
     form.onsubmit = e => {
       e.preventDefault();
       const fd = Object.fromEntries(new FormData(form));
-      delete fd.logoFile; fd.useAI = !!form.useAI?.checked;
+      delete fd.logoFile; fd.useAI = !!form.useAI?.checked && hasOpenAI();
       store.set('agent.' + k, fd);
       runMission(k, fd);
     };
@@ -1132,7 +1327,7 @@ Hoy es ${todayStr()}.`;
   async function dispatch(text, opts = {}) {
     let acts;
     let via = 'reglas';
-    if (settings.claudeKey) {
+    if (hasClaude()) {
       try { acts = await claudeClassify(text); via = 'Claude'; } catch (e) { console.warn(e); }
     }
     if (!acts || !acts.length) acts = splitList(text).map(t => ({ ...heuristicClassify(t), texto: t }));
@@ -1168,14 +1363,14 @@ Hoy es ${todayStr()}.`;
   }
 
   const queueOf = k => tasks.filter(t => t.agent === k && t.status === 'todo');
-  const canRun = k => k === 'disenador' || (AI_AGENTS.includes(k) && !!settings.claudeKey);
+  const canRun = k => k === 'disenador' || (AI_AGENTS.includes(k) && hasClaude());
 
   function fdFromTask(t) {
     const k = t.agent;
     if (k === 'comunicado') return { project: t.project, tema: t.title, idea: t.input };
     if (k === 'correo') return { project: t.project, mail: t.input, idea: (t.steps || []).join('; ') || 'Proponer la respuesta adecuada' };
     if (k === 'juridico') return { project: t.project, modo: t.mode || 'borrador', peticion: t.input, borrador: '', radicado: t.received || todayStr() };
-    if (k === 'disenador') return { project: t.project, titulo: t.title, texto: t.input, escena: '', useAI: !!settings.openaiKey };
+    if (k === 'disenador') return { project: t.project, titulo: t.title, texto: t.input, escena: '', useAI: hasOpenAI() };
     return { idea: t.input, taskTitle: t.title, taskMode: true, project: t.project };
   }
 
@@ -1210,7 +1405,7 @@ Hoy es ${todayStr()}.`;
 
   function renderCmdbar() {
     const bar = $('#cmdbar');
-    bar.hidden = ['ajustes', 'correo'].includes(ui.view);
+    bar.hidden = ui.view === 'ajustes';
     if (bar.hidden) return;
     bar.innerHTML = cmdbarHtml();
     const f = $('#cmdForm', bar), ta = f.text;
@@ -1306,12 +1501,15 @@ Hoy es ${todayStr()}.`;
     $('#vdClose', d).onclick = () => d.close();
     const c = $('#vdCopy', d); if (c) c.onclick = () => navigator.clipboard.writeText(item.content).then(() => toast('Copiado.'));
     $('#vdDown', d).onclick = () => {
-      const a = document.createElement('a'), slug = (item.project + '-' + item.title).replace(/\W+/g, '-').toLowerCase().slice(0, 60);
-      a.href = item.type === 'image' ? item.content : URL.createObjectURL(new Blob([item.content], { type: 'text/plain' }));
-      a.download = slug + (item.type === 'image' ? '.png' : '.txt'); a.click();
+      const slug = (item.project + '-' + item.title).replace(/\W+/g, '-').toLowerCase().slice(0, 60);
+      if (item.type !== 'image') return saveFile(slug + '.txt', item.content);
+      if (item.content.startsWith('data:')) return saveFile(slug + '.png', dataUrlToBlob(item.content));
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      img.onload = () => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); c.toBlob(b => saveFile(slug + '.png', b), 'image/png'); };
+      img.onerror = () => toast('No se pudo preparar la imagen.'); img.src = item.content;
     };
     const ok = $('#vdOk', d); if (ok) ok.onclick = async () => { await approveItem(item); d.close(); onChange?.(); };
-    $('#vdDel', d).onclick = async () => { if (!confirm('¿Eliminar del repositorio?')) return; await repo.del(item.id); d.close(); onChange?.(); };
+    $('#vdDel', d).onclick = e => confirmClick(e.currentTarget, '¿Seguro? Toca otra vez', async () => { await repo.del(item.id); d.close(); onChange?.(); });
   }
 
   async function approveItem(item) {
@@ -1330,6 +1528,12 @@ Hoy es ${todayStr()}.`;
     <form class="card workspace" id="setForm">
       <h2 style="margin-top:0">Delegado</h2>
       <label>Tu nombre (para firmas y trazabilidad)<input name="delegate" value="${esc(settings.delegate)}"></label>
+      ${HOST_FRAME ? `<h2>Conexiones</h2>
+      <div class="notice">Claude: ${HOST.sample ? '<b>conectado</b> con tu cuenta de claude.ai (sin clave de API).' : 'conectando…'}<br>
+        Gmail: conector de claude.ai, <b>solo lectura</b>.<br>
+        Datos: ${HOST.db ? '<b>sincronizados</b> entre tus dispositivos.' : 'solo en este navegador.'}<br>
+        ChatGPT: disponible en la versión instalada con tu clave de OpenAI.</div>
+      <div hidden>` : ''}
       <h2>Claude · redacción</h2>
       <label>Clave API de Anthropic<input name="claudeKey" type="password" autocomplete="off" value="${esc(settings.claudeKey)}" placeholder="sk-ant-…"></label>
       <label>Modelo<select name="claudeModel">
@@ -1341,6 +1545,7 @@ Hoy es ${todayStr()}.`;
       <h2>Gmail (solo lectura)</h2>
       <label>Google OAuth Client ID<input name="googleClientId" value="${esc(settings.googleClientId)}" placeholder="xxxx.apps.googleusercontent.com"></label>
       <div class="notice">Las claves se guardan solo en este navegador. Úsala en un equipo personal y no compartas el enlace con las claves cargadas.</div>
+      ${HOST_FRAME ? '</div>' : ''}
       <button class="btn btn-primary">Guardar ajustes</button>
     </form>
     <div class="card workspace" style="margin-top:12px">
@@ -1364,14 +1569,16 @@ Hoy es ${todayStr()}.`;
     };
     $('#btnProj', root).onclick = () => {
       projects = $('#projText', root).value.split('\n').map(s => s.trim()).filter(Boolean);
-      store.set('projects', projects); toast('Proyectos guardados.'); fillProjectSelect();
+      store.set('projects', projects); if (HOST.db) HOST.db.doc('meta/config').set({ projects }).catch(dbFail); toast('Proyectos guardados.'); fillProjectSelect();
     };
-    root.querySelectorAll('[data-dellogo]').forEach(b => b.onclick = () => { logos.splice(Number(b.dataset.dellogo), 1); store.set('logos', logos); render(); });
+    root.querySelectorAll('[data-dellogo]').forEach(b => b.onclick = () => {
+      const l = logos[Number(b.dataset.dellogo)];
+      if (HOST.db && l.id) { HOST.db.doc('logos/' + l.id).delete().catch(dbFail); if (l.assetId && HOST.assets) HOST.assets.delete(l.assetId).catch(() => {}); }
+      logos.splice(Number(b.dataset.dellogo), 1); store.set('logos', logos.filter(x => !x.id)); render();
+    });
     $('#btnExport', root).onclick = async () => {
       const entregables = await repo.all().catch(() => []);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([JSON.stringify({ tasks, projects, entregables }, null, 2)], { type: 'application/json' }));
-      a.download = `alianza-tareas-${todayStr()}.json`; a.click();
+      saveFile(`alianza-tareas-${todayStr()}.json`, JSON.stringify({ tasks, projects, entregables }, null, 2));
     };
     $('#fileImport', root).onchange = e => {
       const f = e.target.files[0]; if (!f) return;
@@ -1403,6 +1610,7 @@ Hoy es ${todayStr()}.`;
     $('#taskDialogTitle').textContent = id ? 'Editar tarea' : 'Nueva tarea';
     $('#btnDeleteTask').hidden = !id;
     $('#btnCalTask').hidden = !id || !t.due;
+    if (id && t.due) $('#btnCalTask').href = googleCalendarUrl(t);
     dlg.showModal();
   }
 
@@ -1419,15 +1627,9 @@ Hoy es ${todayStr()}.`;
     }
     saveTasks(); render(); toast('Tarea guardada.');
   });
-  $('#btnDeleteTask').onclick = () => {
-    if (!confirm('¿Eliminar esta tarea?')) return;
+  $('#btnDeleteTask').onclick = e => confirmClick(e.currentTarget, '¿Seguro? Toca otra vez', () => {
     tasks = tasks.filter(t => t.id !== editingId); saveTasks(); dlg.close(); render();
-  };
-  $('#btnCalTask').onclick = () => {
-    const t = tasks.find(x => x.id === editingId);
-    const url = googleCalendarUrl(t);
-    if (url) window.open(url, '_blank', 'noopener');
-  };
+  });
   $('#btnNewTask').onclick = () => openTask(null);
 
   // ---------------------------------------------------------------- Navegación
@@ -1457,10 +1659,11 @@ Hoy es ${todayStr()}.`;
   if (store.get('lastDaily', '') !== todayStr()) {
     const open = tasks.filter(t => t.status !== 'done'), td = todayStr();
     const msg = `${open.length} pendientes · ${open.filter(t => t.due === td).length} vencen hoy · ${open.filter(t => t.due && t.due < td).length} vencidas · ${tasks.filter(t => t.status === 'review').length} esperan tu aprobación`;
-    if ('Notification' in window && Notification.permission === 'granted') new Notification('Resumen del día – Alianza', { body: msg });
+    if (!HOST_FRAME && 'Notification' in window && Notification.permission === 'granted') new Notification('Resumen del día – Alianza', { body: msg });
     setTimeout(() => toast('☀️ ' + msg), 600);
     store.set('lastDaily', todayStr());
   }
   setInterval(checkReminders, 30000);
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  bootHost();
+  if (!HOST_FRAME && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
