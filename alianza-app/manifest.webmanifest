@@ -1,0 +1,11 @@
+{
+  "name": "Alianza Tareas",
+  "short_name": "Alianza",
+  "description": "Gestión de pendientes de la Coordinación de Proyectos – Alianza Grupo Inmobiliario",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#1A3867",
+  "lang": "es",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

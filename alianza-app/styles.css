@@ -1,0 +1,184 @@
+/* Paleta institucional Alianza Grupo Inmobiliario */
+:root {
+  --azul: #1A3867;
+  --azul-2: #2B5297;
+  --azul-claro: #E8EEF8;
+  --dorado: #95762F;
+  --dorado-claro: #F4EEDF;
+  --blanco: #FFFFFF;
+  --fondo: #F7F9FC;
+  --texto: #14213D;
+  --texto-2: #5B6782;
+  --borde: #DCE3EF;
+  --rojo: #B3261E;
+  --verde: #2E7D4F;
+  --radio: 14px;
+  --sombra: 0 2px 10px rgba(26, 56, 103, .08);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--fondo);
+  color: var(--texto);
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
+/* Barra superior */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--azul); color: var(--blanco);
+  border-bottom: 3px solid var(--dorado);
+}
+.brand { display: flex; gap: 10px; align-items: center; }
+.brand small { display: block; opacity: .8; font-size: 12px; }
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--blanco); color: var(--azul); font-weight: 700;
+  border: 2px solid var(--dorado);
+}
+
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 22px; margin: 4px 0 4px; color: var(--azul); }
+h2 { font-size: 17px; margin: 18px 0 10px; color: var(--azul); }
+.sub { color: var(--texto-2); margin: 0 0 14px; font-size: 14px; }
+.gold-line { height: 2px; width: 48px; background: var(--dorado); border-radius: 2px; margin: 6px 0 14px; }
+
+/* Botones */
+.btn {
+  border: 0; border-radius: 10px; padding: 9px 14px;
+  font: inherit; font-weight: 600; font-size: 14px; cursor: pointer;
+}
+.btn-primary { background: var(--azul); color: var(--blanco); }
+.btn-primary:hover { background: var(--azul-2); }
+.btn-gold { background: var(--dorado); color: var(--blanco); }
+.btn-ghost { background: transparent; color: var(--azul); border: 1px solid var(--borde); }
+.btn-ghost.danger { color: var(--rojo); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-sm { padding: 6px 10px; font-size: 13px; }
+
+/* Tarjetas */
+.card {
+  background: var(--blanco); border: 1px solid var(--borde);
+  border-radius: var(--radio); box-shadow: var(--sombra);
+  padding: 14px;
+}
+.grid { display: grid; gap: 12px; }
+.stats { grid-template-columns: repeat(4, 1fr); }
+.stat strong { display: block; font-size: 26px; color: var(--azul); }
+.stat span { color: var(--texto-2); font-size: 13px; }
+.stat.gold strong { color: var(--dorado); }
+
+/* Tareas */
+.task {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--blanco); border: 1px solid var(--borde);
+  border-left: 4px solid var(--azul);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+  cursor: pointer;
+}
+.task.alta { border-left-color: var(--dorado); }
+.task.baja { border-left-color: var(--borde); }
+.task.done .t-title { text-decoration: line-through; color: var(--texto-2); }
+.task input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--azul); margin-top: 2px; }
+.t-body { flex: 1; min-width: 0; }
+.t-title { font-weight: 600; font-size: 15px; }
+.t-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--texto-2); }
+.chip {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: var(--azul-claro); color: var(--azul); font-size: 12px; font-weight: 500;
+}
+.chip.gold { background: var(--dorado-claro); color: var(--dorado); }
+.chip.red { background: #FBE9E7; color: var(--rojo); }
+.chip.green { background: #E6F4EC; color: var(--verde); }
+
+/* Tablero kanban */
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.toolbar select, .toolbar input { padding: 8px 10px; border: 1px solid var(--borde); border-radius: 10px; font: inherit; background: var(--blanco); }
+.board { display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+.column { background: var(--azul-claro); border-radius: var(--radio); padding: 10px; min-height: 200px; }
+.column h3 { margin: 2px 4px 10px; font-size: 14px; color: var(--azul); display: flex; justify-content: space-between; }
+.column.drag-over { outline: 2px dashed var(--dorado); }
+.column .task { cursor: grab; }
+
+/* Correo */
+.mail-layout { display: grid; grid-template-columns: 260px 1fr; gap: 12px; }
+.folder-list { max-height: 65vh; overflow: auto; padding: 6px; }
+.folder { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.folder:hover, .folder.active { background: var(--azul-claro); color: var(--azul); }
+.folder .count { color: var(--dorado); font-weight: 600; }
+.mail-item { padding: 10px 12px; border-bottom: 1px solid var(--borde); }
+.mail-item:last-child { border-bottom: 0; }
+.mail-item .subj { font-weight: 600; }
+.mail-item .snip { color: var(--texto-2); font-size: 13px; margin: 2px 0 6px; }
+.readonly-badge { display: inline-flex; gap: 6px; align-items: center; background: var(--dorado-claro); color: var(--dorado); border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
+.logo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.logo-tile { background: var(--blanco); border: 2px solid var(--borde); border-radius: 12px; padding: 8px; text-align: center; font-size: 12px; cursor: pointer; }
+.logo-tile.selected { border-color: var(--dorado); }
+.logo-tile img { width: 100%; height: 70px; object-fit: contain; }
+
+/* Agencia */
+.agents { grid-template-columns: repeat(3, 1fr); }
+.agent { cursor: pointer; border: 2px solid transparent; }
+.agent.active { border-color: var(--dorado); }
+.agent .ico { font-size: 26px; }
+.agent h3 { margin: 6px 0 2px; font-size: 15px; color: var(--azul); }
+.agent p { margin: 0; font-size: 13px; color: var(--texto-2); }
+.agent .engine { margin-top: 8px; }
+.workspace label, dialog label { display: block; font-size: 13px; font-weight: 600; color: var(--texto-2); margin-bottom: 10px; }
+.workspace input, .workspace select, .workspace textarea,
+dialog input, dialog select, dialog textarea {
+  display: block; width: 100%; margin-top: 4px;
+  padding: 9px 10px; border: 1px solid var(--borde); border-radius: 10px;
+  font: inherit; font-weight: 400; color: var(--texto); background: var(--blanco);
+}
+.output { white-space: pre-wrap; background: var(--fondo); border: 1px dashed var(--borde); border-radius: 12px; padding: 12px; min-height: 80px; font-size: 14px; }
+.output canvas, .output img { max-width: 100%; border-radius: 8px; display: block; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.notice { background: var(--dorado-claro); border-left: 4px solid var(--dorado); padding: 10px 12px; border-radius: 8px; font-size: 13px; margin: 10px 0; }
+
+/* Diálogo */
+dialog { border: 0; border-radius: 18px; padding: 0; width: min(520px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+dialog form { padding: 18px; }
+dialog h2 { margin-top: 0; }
+dialog::backdrop { background: rgba(20, 33, 61, .45); }
+.dialog-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.spacer { flex: 1; }
+
+/* Barra de pestañas */
+.tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  display: flex; justify-content: space-around;
+  background: var(--blanco); border-top: 1px solid var(--borde);
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+.tabbar button {
+  flex: 1; background: none; border: 0; font: inherit; font-size: 11px;
+  color: var(--texto-2); display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; padding: 4px 0;
+}
+.tabbar button span { font-size: 18px; }
+.tabbar button.active { color: var(--azul); font-weight: 600; }
+.tabbar button.active span { color: var(--dorado); }
+
+#toast {
+  position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%);
+  background: var(--azul); color: var(--blanco); padding: 10px 16px; border-radius: 10px;
+  font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw;
+}
+#toast.show { opacity: 1; }
+.empty { text-align: center; color: var(--texto-2); padding: 20px; font-size: 14px; }
+
+@media (max-width: 760px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .agents { grid-template-columns: 1fr; }
+  .mail-layout { grid-template-columns: 1fr; }
+  .folder-list { max-height: 30vh; }
+  .board { grid-template-columns: repeat(4, 80vw); scroll-snap-type: x mandatory; }
+  .column { scroll-snap-align: start; }
+  .row { grid-template-columns: 1fr; }
+  .topbar .brand small { display: none; }
+}
