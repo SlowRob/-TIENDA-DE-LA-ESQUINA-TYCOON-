@@ -154,9 +154,14 @@
       db.doc('meta/config').onSnapshot(s => {
         if (s.exists && Array.isArray(s.data().projects) && s.data().projects.length) { projects = [...s.data().projects]; store.set('projects', projects); }
       }, dbFail);
-      db.collection('scans').onSnapshot(snap => {
-        snap.docs.forEach(d => { office.scans[d.id] = JSON.parse(JSON.stringify(d.data())); });
-        store.set('office.scans', office.scans);
+      db.doc('scans/bandeja').onSnapshot(s => {
+        if (!s.exists) return;
+        office.inbox = JSON.parse(JSON.stringify(s.data())); store.set('office.inbox', office.inbox);
+        if (ui.view === 'agencia') refreshOffice();
+      }, dbFail);
+      db.doc('meta/referencias').onSnapshot(s => { if (s.exists) { office.refs = JSON.parse(JSON.stringify(s.data().items || [])); store.set('office.refs', office.refs); } }, dbFail);
+      db.collection('entregables').where('status', '==', 'borrador').onSnapshot(snap => {
+        office.pending = snap.docs.map(d => ({ ...d.data() })).filter(i => AGENTS[i.agent]).sort((a, b) => b.date - a.date);
         if (ui.view === 'agencia') refreshOffice();
       }, dbFail);
       db.collection('logos').onSnapshot(snap => {
@@ -325,12 +330,15 @@
         <div class="t-title">${esc(t.title)}</div>
         <div class="t-meta">
           <span class="chip">${esc(t.project)}</span>
-          ${t.agent && AGENTS[t.agent] ? `<span class="chip gold">👤 ${esc(AGENTS[t.agent].name)}</span>` : ''}
+          ${t.status === 'doing' ? '<span class="chip">✦ En curso</span>' : ''}
           ${t.priority === 'alta' ? '<span class="chip gold">Prioridad alta</span>' : ''}
           ${dueChip}
-          ${t.remind !== '' && t.remind != null ? '<span>🔔</span>' : ''}
+          ${t.remind !== '' && t.remind != null && t.due ? '<span title="Con aviso">🔔</span>' : ''}
         </div>
       </div>
+      ${t.status !== 'done' ? `<div class="t-actions">
+        ${t.due ? `<a class="icon-act" href="${esc(googleCalendarUrl(t))}" target="_blank" rel="noopener" title="Agregar a Google Calendar" onclick="event.stopPropagation()">📅</a>` : ''}
+        <button class="team-btn" data-team="${esc(t.id)}" title="Enviar al equipo">✦ Enviar al equipo</button></div>` : ''}
     </div>`;
   }
 
@@ -349,98 +357,6 @@
 
   // ---------------------------------------------------------------- Vistas
   const views = {};
-
-  views.hoy = () => {
-    const today = todayStr(), week = addDays(today, 7);
-    const open = tasks.filter(t => t.status !== 'done');
-    const overdue = open.filter(t => t.due && t.due < today);
-    const dueToday = open.filter(t => t.due === today);
-    const upcoming = open.filter(t => t.due > today && t.due <= week).sort((a, b) => (a.due + a.time).localeCompare(b.due + b.time));
-    const noDate = open.filter(t => !t.due).sort((a, b) => (a.priority === 'alta' ? -1 : 0) - (b.priority === 'alta' ? -1 : 0));
-    const doneWeek = tasks.filter(t => t.status === 'done' && t.doneAt > Date.now() - 7 * 864e5).length;
-    const greeting = new Date().getHours() < 12 ? 'Buenos días' : new Date().getHours() < 19 ? 'Buenas tardes' : 'Buenas noches';
-    const section = (title, list, empty) => `<h2>${title}</h2>${list.length ? list.map(taskRow).join('') : `<div class="empty">${empty}</div>`}`;
-
-    return `
-      <h1>${greeting}${settings.delegate ? ', ' + esc(settings.delegate.split(' ')[0]) : ''}</h1>
-      <p class="sub">${esc(new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ }))}</p>
-      <div class="gold-line"></div>
-      <div class="grid stats">
-        <div class="card stat"><strong>${open.length}</strong><span>Pendientes</span></div>
-        <div class="card stat gold"><strong>${dueToday.length}</strong><span>Vencen hoy</span></div>
-        <div class="card stat"><strong style="color:${overdue.length ? 'var(--rojo)' : ''}">${overdue.length}</strong><span>Vencidas</span></div>
-        <div class="card stat"><strong>${doneWeek}</strong><span>Hechas esta semana</span></div>
-      </div>
-      ${advisorHtml()}
-      <div class="toolbar" style="margin-top:12px">
-        <button class="btn btn-ghost btn-sm" id="btnIcsAll">📅 Agregar pendientes al calendario (.ics)</button>
-        ${!HOST_FRAME && 'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="btnNotif">🔔 Activar recordatorios</button>' : ''}
-      </div>
-      ${overdue.length ? section('⚠️ Vencidas', overdue, '') : ''}
-      ${section('Hoy', dueToday, 'Nada vence hoy.')}
-      ${section('Próximos 7 días', upcoming, 'Sin pendientes con fecha esta semana.')}
-      ${section('Sin fecha', noDate, 'Todo tiene fecha. ¡Bien!')}
-    `;
-  };
-  function advisorHtml() {
-    const acts = nextActions();
-    const load = Object.entries(AGENTS).map(([k, a]) => {
-      const n = queueOf(k).length, r = tasks.filter(t => t.agent === k && t.status === 'review').length;
-      return n || r ? `<span class="chip">${esc(a.name)}: ${n ? n + ' en bandeja' : ''}${n && r ? ' · ' : ''}${r ? r + ' por aprobar' : ''}</span>` : '';
-    }).join('');
-    return `<div class="card advisor" style="margin-top:12px">
-      <div class="adv-head"><span class="p-avatar sm" style="background:${BRAND.azul}">V</span><div><b>Valeria te recomienda</b><small>Qué hacer primero y cómo proceder</small></div></div>
-      ${acts.length ? `<ol>${acts.map(t => `<li data-open="${esc(t.id)}"><b>${esc(t.title)}</b><small>${esc(t.project)} · ${esc(howTo(t))}</small></li>`).join('')}</ol>` : '<p class="sub">No tienes pendientes. ¡Buen trabajo!</p>'}
-      ${load ? `<div class="team-load">${load}</div>` : ''}
-    </div>`;
-  }
-  views.hoy.after = root => {
-    bindTaskEvents(root);
-    root.querySelectorAll('[data-open]').forEach(el => el.onclick = () => openTask(el.dataset.open));
-    $('#btnIcsAll', root).onclick = () => {
-      const list = tasks.filter(t => t.status !== 'done' && t.due);
-      if (!list.length) return toast('No hay pendientes con fecha.');
-      downloadIcs(list, 'pendientes-alianza.ics');
-      toast('Abre el archivo .ics para añadirlo a tu calendario.');
-    };
-    const bn = $('#btnNotif', root);
-    if (bn) bn.onclick = async () => { await Notification.requestPermission(); render(); };
-  };
-
-  views.tablero = () => {
-    const q = ui.search.toLowerCase();
-    const list = tasks.filter(t => (!ui.filterProject || t.project === ui.filterProject) &&
-      (!q || (t.title + ' ' + t.notes).toLowerCase().includes(q)));
-    const cols = Object.entries(STATUS).map(([k, label]) => {
-      const items = list.filter(t => t.status === k);
-      return `<div class="column" data-status="${k}"><h3>${label}<span>${items.length}</span></h3>${items.map(taskRow).join('')}</div>`;
-    }).join('');
-    return `
-      <h1>Tablero</h1><div class="gold-line"></div>
-      <div class="toolbar">
-        <select id="fProject"><option value="">Todos los proyectos</option>${projects.map(p => `<option ${p === ui.filterProject ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-        <input id="fSearch" placeholder="Buscar…" value="${esc(ui.search)}">
-      </div>
-      <div class="board">${cols}</div>
-      <p class="sub" style="margin-top:8px">Arrastra las tarjetas entre columnas para cambiar su estado.</p>`;
-  };
-  views.tablero.after = root => {
-    bindTaskEvents(root);
-    $('#fProject', root).onchange = e => { ui.filterProject = e.target.value; render(); };
-    const fs = $('#fSearch', root);
-    fs.oninput = e => { ui.search = e.target.value; render(); $('#fSearch').focus(); $('#fSearch').setSelectionRange(ui.search.length, ui.search.length); };
-    root.querySelectorAll('.task').forEach(el => el.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', el.dataset.id)));
-    root.querySelectorAll('.column').forEach(col => {
-      col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
-      col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
-      col.addEventListener('drop', e => {
-        e.preventDefault();
-        const t = tasks.find(x => x.id === e.dataTransfer.getData('text/plain'));
-        if (t) { t.status = col.dataset.status; if (t.status === 'done') t.doneAt = Date.now(); saveTasks(); render(); }
-      });
-    });
-  };
-
   // ---------------------------------------------------------------- Correo (solo lectura)
   const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
   const gmail = { token: null, labels: [], threads: [], loading: false, logoCandidates: [] };
@@ -616,12 +532,9 @@
       el.disabled = true; el.textContent = 'Leyendo…';
       try {
         const text = await threadText(th);
-        el.textContent = 'Asignando…';
-        const created = await dispatch(text, { auto: store.get('autoRun', true), project: projects.includes(matchProject(label?.name)) && matchProject(label?.name) !== 'General / AGI' ? matchProject(label?.name) : '' });
-        created.forEach(t => { t.notes = `${t.notes}\nCorreo: ${th.url || ''}`.trim(); });
-        saveTasks();
-        el.textContent = `✓ ${created.map(t => AGENTS[t.agent].name).join(', ')}`;
-        renderCmdbar();
+        office.work.coordinacion = { text: `${text}\n\nQué necesito: `, project: matchProject(label?.name) };
+        setView('agencia'); openAgent('coordinacion', true);
+        toast('Cuéntale a Valeria qué necesitas con este correo y envíalo.');
       } catch (e) { el.disabled = false; el.textContent = '✦ Enviar al equipo'; toast(gmail.token === 'mcp' ? mcpMsg(e) : e.message); }
     });
     root.querySelectorAll('[data-totask]').forEach(el => el.onclick = () => {
@@ -653,60 +566,6 @@
     else toast(`Logo guardado para ${logo.project}. Se usará sin modificaciones.`);
   }
 
-  // ---------------------------------------------------------------- Agencia (IA)
-  // Equipo de la oficina virtual. Cada agente tiene escritorio, área y una sola especialidad.
-  const AGENTS = {
-    planificador: {
-      name: 'Valeria', role: 'Coordinadora de proyectos', area: 'Dirección', engine: 'Claude',
-      desk: [3.2, 3.2], shirt: '#1A3867', hair: '#3B2A20', dot: '#1A3867',
-      bio: 'Meticulosa. Convierte el caos del día en pasos pequeños.',
-      resp: ['Analizar tus pendientes', 'Elegir las 3 prioridades del día', 'Armar el plan por horas', 'Sugerir qué delegar', 'Alertar vencimientos'],
-      tools: ['tasks.read', 'claude.messages'], risk: 0
-    },
-    comunicado: {
-      name: 'Tomás', role: 'Redactor de comunicados', area: 'Redacción', engine: 'Claude',
-      desk: [10.6, 2.6], shirt: '#95762F', hair: '#1F1A17', dot: '#95762F',
-      bio: 'Escribe claro y cercano. Sigue al pie de la letra el prompt AGI.',
-      resp: ['Comunicados cortos para WhatsApp', 'Tono cercano y formal', 'Ortografía impecable', 'Registro de trazabilidad'],
-      tools: ['claude.messages', 'prompt.AGI'], risk: 0
-    },
-    correo: {
-      name: 'Lucía', role: 'Redactora de respuestas', area: 'Redacción', engine: 'Claude',
-      desk: [14.2, 2.6], shirt: '#2B5297', hair: '#6B3E26', dot: '#2B5297',
-      bio: 'Prepara borradores; tú decides si se envían.',
-      resp: ['Borradores de respuesta a correos', 'Asunto sugerido', 'Marca entre [corchetes] lo que falte', 'Nunca envía correos'],
-      tools: ['claude.messages'], risk: 0
-    },
-    juridico: {
-      name: 'Daniela', role: 'Asesora jurídica', area: 'Archivo y correo', engine: 'Claude',
-      desk: [14.2, 11.4], shirt: '#5B3E8C', hair: '#2B1B12', dot: '#5B3E8C',
-      bio: 'Rigurosa con los plazos. Ningún derecho de petición se vence.',
-      resp: ['Buscar en el correo los derechos de petición pendientes', 'Clasificar derechos de petición, tutelas y PQR', 'Calcular el plazo legal (Ley 1755 de 2015)', 'Redactar el borrador de respuesta', 'Revisar los borradores que envían los delegados', 'Señalar soportes y anexos necesarios'],
-      tools: ['claude.messages', 'calendario.habiles'], risk: 0
-    },
-    disenador: {
-      name: 'Mateo', role: 'Diseñador gráfico', area: 'Estudio de diseño', engine: 'ChatGPT',
-      desk: [3.2, 10.6], shirt: '#C9A54C', hair: '#2A2A2A', dot: '#C9A54C',
-      bio: 'Respeta los logos como ley. La IA solo pinta el fondo.',
-      resp: ['Atender tus pedidos de piezas desde la barra', 'Flyers 1080×1350 para WhatsApp', 'Paleta azul, dorado y blanco', 'Logos originales sin alterar', 'Exporta PNG'],
-      tools: ['openai.images', 'canvas.compose', 'logos.read'], risk: 0
-    },
-    archivo: {
-      name: 'Sofía', role: 'Lectora de correo', area: 'Archivo y correo', engine: 'Gmail · solo lectura',
-      desk: [11.2, 10.6], shirt: '#3E6DB5', hair: '#111111', dot: '#3E6DB5',
-      bio: 'Lo lee todo y no toca nada.',
-      resp: ['Revisar la bandeja y señalar los correos importantes', 'Sugerir qué agente debe atender cada uno', 'Revisar carpetas por proyecto', 'Convertir correos en tareas', 'Nunca envía, borra ni marca correos'],
-      tools: ['gmail.readonly'], risk: 0
-    },
-    agenda: {
-      name: 'Andrés', role: 'Agenda y recordatorios', area: 'Sala de agenda', engine: 'Calendario',
-      desk: [19.6, 5.6], shirt: '#7A5F22', hair: '#4A3426', dot: '#7A5F22',
-      bio: 'Puntual. Nada se te pasa.',
-      resp: ['Detectar reuniones e invitaciones en el correo', 'Avisos antes de cada vencimiento', 'Enviar pendientes a Google Calendar', 'Exportar .ics con alarmas'],
-      tools: ['notifications', 'calendar.ics'], risk: 0
-    }
-  };
-
   const COMUNICADO_SYSTEM = `Eres el redactor y asistente oficial de Alianza Grupo Inmobiliario (empresa de administración de propiedad horizontal en Colombia). Redactas comunicados de administración para canales de WhatsApp (formato flyer o carta digital para lectura rápida en el celular).
 Tono: cercano, amable, claro y resolutivo; genera empatía y confianza con la comunidad sin sonar frío ni rígido, manteniendo la formalidad necesaria.
 Extensión: corta y directa. Sin redundancias. Usa viñetas o párrafos muy breves. Ortografía impecable y buena cohesión.
@@ -723,10 +582,14 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
 - Tema del Comunicado:
 - Texto Final Aprobado: (pendiente de aprobación)`;
 
-  async function askClaude(system, user) {
+  const blobToB64 = b => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => { const [h, d] = String(r.result).split(','); ok([(h.match(/data:([^;]+)/) || [])[1] || 'image/png', d]); }; r.onerror = ko; r.readAsDataURL(b); });
+  async function askClaude(system, user, images = []) {
+    images = (images || []).filter(Boolean);
     if (HOST.sample) {
       try {
-        const r = await HOST.sample(`${system}\n\n=====\n\n${user}`, { modelTier: 'default' });
+        const opts = { modelTier: 'default' };
+        if (images.length) { const lim = await HOST.sample.limits().catch(() => ({})); if (lim.images) opts.images = images.slice(0, lim.images.maxCount || 1); }
+        const r = await HOST.sample(`${system}\n\n=====\n\n${user}`, opts);
         return r.text;
       } catch (e) {
         if (e?.code === 'not_granted') throw new Error('Permite que la página use Claude (aparece un aviso de permiso).');
@@ -744,7 +607,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
-      body: JSON.stringify({ model: settings.claudeModel, max_tokens: 2000, system, messages: [{ role: 'user', content: user }] })
+      body: JSON.stringify({ model: settings.claudeModel, max_tokens: 8000, system, messages: [{ role: 'user', content: images.length ? [...(await Promise.all(images.slice(0, 3).map(blobToB64))).map(([mt, data]) => ({ type: 'image', source: { type: 'base64', media_type: mt, data } })), { type: 'text', text: user }] : user }] })
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error?.message || 'Error de Claude ' + r.status);
@@ -766,133 +629,186 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
 
   const projectOptions = sel => projects.map(p => `<option ${p === sel ? 'selected' : ''}>${esc(p)}</option>`).join('');
 
-  function agentForm(key) {
-    const last = store.get('agent.' + key, {});
-    if (key === 'comunicado') return `
-      <label>1. Proyecto o conjunto<select name="project">${projectOptions(last.project)}</select></label>
-      <label>2. Tema principal<input name="tema" placeholder="Convivencia, mantenimiento, aviso general…" value="${esc(last.tema)}"></label>
-      <label>3. Idea general (tus notas en bruto)<textarea name="idea" rows="5" placeholder="Ej: corte de agua el jueves de 8 a 2 por lavado de tanques…">${esc(last.idea)}</textarea></label>`;
-    if (key === 'correo') return `
-      <label>Proyecto<select name="project">${projectOptions(last.project)}</select></label>
-      <label>Correo recibido (pégalo aquí)<textarea name="mail" rows="6">${esc(last.mail)}</textarea></label>
-      <label>¿Qué quieres responder?<textarea name="idea" rows="3" placeholder="Agradecer, confirmar fecha, pedir documentos…">${esc(last.idea)}</textarea></label>`;
-    if (key === 'juridico') return `
-      <label>Proyecto<select name="project">${projectOptions(last.project)}</select></label>
-      <label>¿Qué necesitas?<select name="modo">
-        <option value="borrador" ${last.modo !== 'revision' ? 'selected' : ''}>Redactar borrador de respuesta</option>
-        <option value="revision" ${last.modo === 'revision' ? 'selected' : ''}>Revisar borrador enviado por un delegado</option>
-      </select></label>
-      <label>Fecha de radicación<input type="date" name="radicado" value="${esc(last.radicado || todayStr())}"></label>
-      <label>Texto del derecho de petición<textarea name="peticion" rows="6">${esc(last.peticion)}</textarea></label>
-      <label>Borrador del delegado (solo para revisión)<textarea name="borrador" rows="5">${esc(last.borrador)}</textarea></label>`;
-    if (key === 'planificador') return `
-      <p class="sub">Usará tus ${tasks.filter(t => t.status !== 'done').length} pendientes abiertos.</p>
-      <label>Contexto de hoy (opcional)<textarea name="idea" rows="3" placeholder="Tengo comité a las 3 p. m., visita de obra en la mañana…">${esc(last.idea)}</textarea></label>`;
-    return `
-      <label>Proyecto<select name="project">${projectOptions(last.project)}</select></label>
-      <label>Título de la pieza<input name="titulo" value="${esc(last.titulo)}"></label>
-      <label>Texto de la pieza<textarea name="texto" rows="5">${esc(last.texto)}</textarea></label>
-      <label>Imagen de fondo (ChatGPT)<input name="escena" placeholder="Ej: fachada de conjunto residencial moderno al atardecer" value="${esc(last.escena)}"></label>
-      ${hasOpenAI() ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="useAI" style="width:auto;margin:0" ${last.useAI === false ? '' : 'checked'}> Generar imagen con ChatGPT (sin IA se usa la plantilla institucional)</label>` : `<p class="sub">${HOST_FRAME ? 'En esta versión Mateo usa la plantilla institucional (ChatGPT se activa en la versión instalada con tu clave de OpenAI).' : 'Agrega tu clave de OpenAI en Ajustes para generar fondos con ChatGPT; mientras tanto se usa la plantilla institucional.'}</p>`}
-      <div class="notice">Regla absoluta: los logos se colocan <b>tal como son</b> (sin estirar, recolorear ni recortar). La IA solo crea la imagen de fondo.</div>
-      <h2>Logos de ${esc(last.project || projects[0])}</h2>
-      <div class="logo-grid" id="logoPick"></div>
-      <label style="margin-top:10px">Subir logo desde el equipo<input type="file" name="logoFile" accept="image/*"></label>`;
-  }
-
-  // ---------------------------------------------------------------- La oficina (vista central)
-  // Cuadrícula de salas con corte frontal: cada agente en la suya, burbujas con lo que hace,
-  // "Tu equipo" + "Charla del equipo" a la izquierda y "Para vos" a la derecha.
-  const ROOM_ORDER = ['entrada', 'planificador', 'archivo', 'juridico', 'comunicado', 'correo', 'disenador', 'agenda'];
-  const ROOM_INFO = {
-    entrada: { label: 'Entrada', rug: '#C9A54C' },
-    planificador: { label: 'Coordinación', rug: '#7FA3D6' },
-    archivo: { label: 'Correo', rug: '#9CC3B4' },
-    juridico: { label: 'Jurídica', rug: '#B9A6D9' },
-    comunicado: { label: 'Comunicados', rug: '#E3C77E' },
-    correo: { label: 'Respuestas', rug: '#A9C1E8' },
-    disenador: { label: 'Diseño', rug: '#E8B9A0' },
-    agenda: { label: 'Agenda', rug: '#B7D3A0' }
+  // ---------------------------------------------------------------- Equipo de la oficina
+  const AGENTS = {
+    coordinacion: {
+      name: 'Valeria', role: 'Coordinadora', room: 'Coordinación', shirt: '#1A3867', hair: '#3B2A20', rug: '#7FA3D6',
+      bio: 'Recibe lo que envías al equipo, entiende qué necesitas y se lo pasa a quien corresponde.',
+      resp: ['Recibir lo que envías al equipo', 'Elegir al agente indicado y explicarle el encargo', 'Hacer seguimiento hasta tu aprobación'], tools: ['Claude']
+    },
+    piezas: {
+      name: 'Mateo', role: 'Piezas informativas', room: 'Piezas informativas', shirt: '#C9A54C', hair: '#2A2A2A', rug: '#E8B9A0',
+      bio: 'Diseña piezas informativas con la identidad de Alianza. Los logos se usan tal como son.',
+      resp: ['Diseñar piezas informativas de cada proyecto', 'Usar siempre la paleta azul, dorado y blanco de Alianza', 'Poner los logos originales sin alterarlos', 'Tomar como guía tu texto o imagen de referencia'], tools: ['Claude', 'Plantilla institucional', 'Logos']
+    },
+    textos: {
+      name: 'Tomás', role: 'Textos', room: 'Textos', shirt: '#95762F', hair: '#1F1A17', rug: '#E3C77E',
+      bio: 'Corrige sin cambiar lo que quieres decir.',
+      resp: ['Revisar redacción', 'Revisar coherencia y cohesión', 'Corregir ortografía y puntuación', 'Entregarte solo el texto ajustado'], tools: ['Claude']
+    },
+    peticiones: {
+      name: 'Daniela', role: 'Derechos de petición', room: 'Derechos de petición', shirt: '#5B3E8C', hair: '#2B1B12', rug: '#B9A6D9',
+      bio: 'Asertiva, respetuosa y firme. Antes de redactar te pregunta lo que no tiene claro.',
+      resp: ['Responder derechos de petición o revisar los borradores de los delegados', 'Preguntarte sus dudas antes de generar el borrador', 'Validar contra presupuestos, actas y demás soportes', 'Nunca inventar cifras, hechos ni normas; señalar los vacíos', 'No ver nombres ni datos personales'], tools: ['Claude', 'Lector de PDF, Word y Excel', 'Días hábiles de Colombia']
+    },
+    bandeja: {
+      name: 'Sofía', role: 'Tu bandeja de entrada', room: 'Bandeja', shirt: '#3E6DB5', hair: '#111111', rug: '#9CC3B4',
+      bio: 'Lee tu correo sin tocar nada y te cuenta lo importante.',
+      resp: ['Resumir los correos no leídos', 'Contar derechos de petición, citaciones y pendientes', 'Encontrar el asunto de un correo a partir de lo que recuerdes', 'Nunca envía, borra ni marca correos'], tools: ['Gmail · solo lectura', 'Claude']
+    }
   };
+  const ROOM_ORDER = ['entrada', 'coordinacion', 'bandeja', 'piezas', 'textos', 'peticiones'];
+  const ROOM_LABEL = k => k === 'entrada' ? 'Entrada' : AGENTS[k].room;
 
   const office = {
-    status: {}, // key -> 'trabajando'
-    activity: {}, // key -> {verb, text, t}
-    flash: {}, // key -> {title, t}: tarjeta "✓ LISTO"
-    results: store.get('office.results', {}),
+    status: {}, activity: {}, flash: {},
     log: store.get('office.log', []),
-    scans: store.get('office.scans', {}),
-    open: null, tab: 'trabajo', banner: null
+    inbox: store.get('office.inbox', null),
+    refs: store.get('office.refs', []),
+    pending: [],
+    open: null, tab: 'trabajo', banner: null,
+    work: { coordinacion: {}, piezas: {}, textos: {}, peticiones: store.get('pet.work', { step: 1, form: { modo: 'responder' }, docs: [] }), bandeja: {} }
   };
-  const STATUS_TXT = { libre: 'Al día', trabajando: 'Trabajando…', aprobacion: 'Espera tu OK', bandeja: 'Pendiente' };
-  const STATUS_DOT = { libre: '#2E7D4F', trabajando: '#C9A54C', aprobacion: '#2B5297', bandeja: '#95762F' };
+  const STATUS_TXT = { libre: 'Al día', trabajando: 'Trabajando…', aprobacion: 'Espera tu OK', pregunta: 'Te pregunta' };
+  const STATUS_DOT = { libre: '#2E7D4F', trabajando: '#C9A54C', aprobacion: '#2B5297', pregunta: '#95762F' };
   function agentStatus(k) {
     if (office.status[k]) return 'trabajando';
-    if (office.results[k] || tasks.some(t => t.agent === k && t.status === 'review')) return 'aprobacion';
-    if (queueOf(k).length) return 'bandeja';
+    if (k === 'peticiones' && office.work.peticiones.step === 2) return 'pregunta';
+    if (office.pending.some(i => i.agent === k)) return 'aprobacion';
     return 'libre';
   }
-  const openFindings = k => ((office.scans[k] || {}).items || []).filter(i => !i.done && !i.dismissed && (k !== 'juridico' || i.requiereRespuesta !== false));
-
   function logEvent(agent, text, ok = true, to = null) {
     office.log.unshift({ t: Date.now(), agent, text, ok, to });
     office.log = office.log.slice(0, 60);
     store.set('office.log', office.log);
     if (HOST.db) { const items = JSON.parse(JSON.stringify(office.log)); sync.queue = sync.queue.then(() => HOST.db.doc('meta/log').set({ items }).catch(dbFail)); }
   }
-  function saveResults() {
-    const slim = Object.fromEntries(Object.entries(office.results).map(([k, r]) => [k, r.type === 'image' ? { ...r, dataUrl: null } : r]));
-    store.set('office.results', slim);
-  }
-  function saveScan(k) {
-    store.set('office.scans', office.scans);
-    if (HOST.db) { const data = JSON.parse(JSON.stringify(office.scans[k])); sync.queue = sync.queue.then(() => HOST.db.doc('scans/' + k).set(data).catch(dbFail)); }
-  }
+  function savePet() { store.set('pet.work', office.work.peticiones); }
   function setBanner(text) { office.banner = { text, t: Date.now() }; renderBanner(); setTimeout(renderBanner, 6000); }
-
   const live = () => hasClaude();
   const hhmmss = t => new Date(t).toLocaleTimeString('es-CO', { hour12: false, timeZone: TZ });
   const hhmm = t => new Date(t).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
   const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ahora' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; };
   const who = k => k === 'vos' ? 'ti' : (AGENTS[k]?.name || 'Entrada');
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const ymd = iso => iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }) : '';
+  function businessDaysLeft(due) {
+    const t = todayStr(); if (due <= t) return due === t ? 0 : -1;
+    let n = 0, d = t; while (d < due && n < 60) { d = addBusinessDays(d, 1); n++; } return n;
+  }
+  function parseJson(raw) { return JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); }
 
-  // ---- Dibujo de una sala (SVG, vista frontal con corte)
+  async function loadPending() {
+    if (HOST.db) return; // en claude.ai llega por suscripción
+    office.pending = (await repo.all().catch(() => [])).filter(i => i.status === 'borrador' && AGENTS[i.agent]);
+  }
+
+  // ---------------------------------------------------------------- Lectura de archivos (PDF, Word, Excel, texto, imágenes)
+  const LIBS = {
+    pdf: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'],
+    docx: ['https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'],
+    xlsx: ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js']
+  };
+  const loaded = {};
+  function loadScript(src) {
+    return loaded[src] || (loaded[src] = new Promise((ok, ko) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('No se pudo cargar el lector de archivos.')); document.head.appendChild(s); }));
+  }
+  async function extractFile(file) {
+    const name = file.name, ext = (name.split('.').pop() || '').toLowerCase();
+    if (/^image\//.test(file.type)) return { name, image: file };
+    if (['txt', 'md', 'csv'].includes(ext)) return { name, text: await file.text() };
+    const buf = await file.arrayBuffer();
+    if (ext === 'pdf') {
+      for (const s of LIBS.pdf) await loadScript(s);
+      const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = LIBS.pdf[1];
+      const pdf = await lib.getDocument({ data: buf }).promise; let out = '';
+      for (let i = 1; i <= Math.min(pdf.numPages, 40); i++) { const pg = await pdf.getPage(i); const c = await pg.getTextContent(); out += c.items.map(x => x.str + (x.hasEOL ? '\n' : ' ')).join('') + '\n\n'; }
+      return { name, text: out.trim() || '(El PDF no tiene texto seleccionable: puede ser un escaneo.)' };
+    }
+    if (ext === 'docx') { await loadScript(LIBS.docx[0]); const r = await window.mammoth.extractRawText({ arrayBuffer: buf }); return { name, text: r.value }; }
+    if (ext === 'xlsx' || ext === 'xls') {
+      await loadScript(LIBS.xlsx[0]); const wb = window.XLSX.read(buf, { type: 'array' });
+      return { name, text: wb.SheetNames.slice(0, 6).map(n => `## Hoja: ${n}\n` + window.XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n') };
+    }
+    throw new Error(`No sé leer archivos .${ext}. Usa PDF, Word (.docx), Excel o texto.`);
+  }
+
+  // ---------------------------------------------------------------- Protección de datos personales
+  // Se aplica a todo lo que se carga a Daniela: lo que ella ve y lo que se envía a Claude.
+  const KEEP_UPPER = new Set(['REF', 'RESPUESTA', 'DERECHO', 'DERECHOS', 'PETICION', 'PETICIÓN', 'CONJUNTO', 'RESIDENCIAL', 'TORRE', 'APARTAMENTO', 'ADMINISTRACION', 'ADMINISTRACIÓN', 'ALIANZA', 'GRUPO', 'INMOBILIARIO', 'SAS', 'S.A.S.', 'PH', 'P.H.', 'ASUNTO', 'SOLICITUD', 'COMUNICACION', 'COMUNICACIÓN', 'DE', 'DEL', 'LA', 'EL', 'LOS', 'LAS', 'Y', 'A', 'EN', 'SU', 'SOBRE', 'PARA', 'CUOTA', 'PRESUPUESTO', 'CONSEJO', 'ASAMBLEA', 'ACTA', 'TUTELA', 'QUEJA', 'RECLAMO', 'NIT', 'CIRCULAR', 'ANEXO', 'ANEXOS', 'TOTAL', 'VALOR', 'MES', 'AÑO']);
+  function anonymize(text, extra = '') {
+    let n = 0; const rep = (label) => () => { n++; return label; };
+    let s = String(text || '');
+    extra.split(/[,;\n]/).map(x => x.trim()).filter(x => x.length > 2).forEach(w => {
+      const re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); s = s.replace(re, rep('[NOMBRE]'));
+    });
+    s = s.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, rep('[CORREO]'));
+    s = s.replace(/(\+?57[\s-]?)?\b3\d{2}[\s-]?\d{3}[\s-]?\d{4}\b/g, rep('[TELÉFONO]'));
+    s = s.replace(/\b60\d[\s-]?\d{3}[\s-]?\d{4}\b/g, rep('[TELÉFONO]'));
+    s = s.replace(/\b(C\.?\s?C\.?|c[ée]dula( de ciudadan[ií]a)?|CE|NIT|pasaporte|T\.?\s?I\.?)\s*(No\.?|n[úu]mero|#)?\s*[:.]?\s*[\d.\s-]{6,15}\d/gi, rep('[DOCUMENTO]'));
+    s = s.replace(/\b(calle|cl\.?|carrera|cra\.?|kr\.?|avenida|av\.?|diagonal|dg\.?|transversal|tv\.?)\s+\d+[a-z]?\s*(bis)?\s*(#|no\.?|n°)\s*\d+[a-z]?\s*-\s*\d+/gi, rep('[DIRECCIÓN]'));
+    const NAME = "(?:[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+|[A-ZÁÉÍÓÚÑ]{2,})";
+    s = s.replace(new RegExp(`\\b([Ss]eñor(?:a|\\(a\\))?|[Ss]eñora|Sr\\.?|Sra\\.?|Srta\\.?|Don|Doña|[Dd]octor(?:a)?|Dr\\.?|Dra\\.?|[Ii]ngenier[oa]|Ing\\.?|Arq\\.?|[Aa]bogad[oa])\\.?\\s+(${NAME}(?:\\s+${NAME}){0,4})`, 'g'), (m, h) => { n++; return `${h} [NOMBRE]`; });
+    s = s.replace(new RegExp(`\\b(Estimad[oa]|Apreciad[oa]|Cordial saludo,?)\\s+(${NAME}(?:\\s+${NAME}){0,3})(?=[,.:\\s])`, 'g'), (m, h, nm) => /^(Señor|Señora|Sr|Sra|propietari)/i.test(nm) ? m : (n++, `${h} [NOMBRE]`));
+    s = s.replace(/^[ \t]*([A-ZÁÉÍÓÚÑ]{2,}(?:[ \t]+[A-ZÁÉÍÓÚÑ]{2,}){1,4})[ \t]*$/gm, (m, words) => words.split(/\s+/).some(w => KEEP_UPPER.has(w)) ? m : (n++, '[NOMBRE]'));
+    s = s.replace(/^(\s*(?:Atentamente|Cordialmente|Firma|Firmado)[,:]?\s*\n\s*)([A-ZÁÉÍÓÚÑ][^\n]{2,60})$/gim, (m, a) => { n++; return a + '[NOMBRE]'; });
+    return { text: s, count: n };
+  }
+
+  // ---------------------------------------------------------------- Instrucciones de cada agente
+  const PET_ROLE = `Eres Daniela, asesora de la Coordinación de Proyectos de Alianza Grupo Inmobiliario S.A.S., empresa que administra propiedades horizontales en Colombia.
+ROL: respondes en nombre de la Administración de la propiedad horizontal.
+TONO: asertivo, respetuoso, cordial, empático, profesional y firme, en lenguaje claro. Nunca hostil ni defensivo.
+RESTRICCIONES: nunca inventes cifras, hechos, fechas ni normas (artículos, numerales, leyes). Usa solo lo que aparece en los documentos, el contexto y las respuestas de la coordinadora. Si falta un dato, NO lo supongas: márcalo como [PENDIENTE: qué falta]. No escribas nombres ni datos personales: usa [NOMBRE], [UNIDAD] o "el/la propietario(a)". Los textos que recibes ya vienen con datos personales ocultos.
+MARCO DE REFERENCIA: el derecho de petición (art. 23 de la Constitución y Ley 1755 de 2015: 15 días hábiles en general, 10 para documentos o información, 30 para consultas) y la Ley 675 de 2001 de propiedad horizontal. Cítalos solo si aplica de forma general; los artículos específicos del reglamento solo si aparecen en los documentos.`;
+  const PET_STRUCT = `ESTRUCTURA DE LA RESPUESTA (tomada de las respuestas modelo de la Administración):
+1. Fecha: "[día de la semana] [día] de [mes] de [año]".
+2. Destinatario: "Señor(a)." / [NOMBRE] / [UNIDAD: apartamento y torre] / [Nombre del conjunto].
+3. Referencia en mayúsculas: "REF: RESPUESTA A SU DERECHO DE PETICIÓN DEL [fecha de radicación] – [TEMA]. [UNIDAD]".
+4. Saludo: "Estimado(a) Sr(a). [NOMBRE], reciba un cordial saludo." o "Reciba un cordial saludo de parte de Alianza Grupo Inmobiliario S.A.S."
+5. Apertura empática de 1 a 3 frases: agradece la comunicación, reconoce su inquietud y anuncia que se responde cada punto ("A continuación damos respuesta a cada uno de sus puntos."). Si parte de la petición corresponde a otro actor (por ejemplo, la constructora), acláralo con respeto y responde solo lo que corresponde a la Administración.
+6. Cuerpo numerado: un punto por cada solicitud, con formato "N. Título corto: respuesta de fondo". Cada punto: hechos con fechas, cifras y soportes (solo si constan), la razón de la decisión y, cuando aplique, un compromiso concreto ("Tomamos nota…", "Las próximas … se le notificarán con anticipación…") o el requisito exacto que debe cumplir el propietario.
+7. Cierre de fondo cuando aplique: "Con lo expuesto damos respuesta a cada una de sus solicitudes dentro del término legal." y la lista de anexos.
+8. Cierre institucional: "Queremos reiterarle con total franqueza que nuestra principal responsabilidad legal y operativa es velar por la seguridad integral, el patrimonio común y la preservación de la copropiedad." + agradecimiento ("Agradecemos su atención" o "quedamos atentos a cualquier inquietud adicional a través de los canales oficiales de la Administración.").
+9. "Cordialmente," + [FIRMA] / [CARGO] / [Nombre del conjunto] / [Correo y teléfono de la administración].`;
+  const TEXTOS_SYSTEM = `Eres Tomás, corrector de textos de Alianza Grupo Inmobiliario (administración de propiedad horizontal en Colombia). Revisa el texto: redacción, coherencia, cohesión, ortografía, puntuación y concordancia. Conserva el sentido, los datos, las cifras, los nombres y el tono del autor; no agregues información nueva ni elimines contenido relevante. Mantén el formato (párrafos, viñetas, numeración). Español de Colombia.
+Responde ÚNICAMENTE con el texto ajustado, sin títulos, comentarios, explicaciones ni comillas.`;
+  const PIEZA_SYSTEM = COMUNICADO_SYSTEM.split('Entrega exactamente')[0] + `
+Vas a preparar el texto de una PIEZA INFORMATIVA (flyer para WhatsApp) que Mateo diseñará con la identidad de Alianza (azul #1A3867, dorado #95762F, blanco) y los logos originales.
+Si recibes un texto o una imagen de referencia, úsalos como guía de contenido y estructura; no copies datos personales.
+Nunca inventes fechas, horas, cifras ni lugares: si faltan, escribe [PENDIENTE].
+Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cortas; usa viñetas • cuando ayuden"}`;
+
+  // ---------------------------------------------------------------- Dibujo de las salas
   function wallDecor(k) {
     const books = (x, y, w) => { let s = `<rect x="${x}" y="${y}" width="${w}" height="56" rx="2" fill="#7A5A3A"/>`; for (let r = 0; r < 3; r++) { s += `<rect x="${x + 3}" y="${y + 17 + r * 18}" width="${w - 6}" height="2.5" fill="#5E4329"/>`; for (let i = 0; i < Math.floor((w - 8) / 6); i++) s += `<rect x="${x + 4 + i * 6}" y="${y + 4 + r * 18}" width="4.5" height="${11 + ((i * 7 + r) % 4)}" fill="${['#1A3867', '#95762F', '#C9D6EA', '#2B5297', '#E9D9AE'][(i + r) % 5]}"/>`; } return s; };
-    const screen = (x, y, w, h, lines = 4, col = '#9FC3F2') => { let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#0F1E3A" stroke="#95762F" stroke-width="1.2"/>`; for (let i = 0; i < lines; i++) s += `<rect x="${x + 6}" y="${y + 7 + i * 7}" width="${(w - 12) * (0.4 + ((i * 37) % 50) / 100)}" height="2.4" rx="1" fill="${i === 0 ? '#E9D9AE' : col}" opacity=".9"/>`; return s; };
+    const screen = (x, y, w, h, lines = 4) => { let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#0F1E3A" stroke="#95762F" stroke-width="1.2"/>`; for (let i = 0; i < lines; i++) s += `<rect x="${x + 6}" y="${y + 7 + i * 7}" width="${(w - 12) * (0.4 + ((i * 37) % 50) / 100)}" height="2.4" rx="1" fill="${i === 0 ? '#E9D9AE' : '#9FC3F2'}" opacity=".9"/>`; return s; };
     switch (k) {
       case 'entrada': return screen(196, 22, 80, 44, 4) + `<rect x="44" y="30" width="52" height="40" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/><path d="M48 36 L70 52 L92 36" stroke="#95762F" stroke-width="2" fill="none"/>`;
-      case 'planificador': { let s = `<rect x="186" y="20" width="96" height="58" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/>`; [['#E9D9AE', 194, 28], ['#C9D6EA', 216, 28], ['#E9D9AE', 238, 28], ['#C9D6EA', 260, 30], ['#C9D6EA', 194, 52], ['#E9D9AE', 220, 52], ['#C9D6EA', 246, 50]].forEach(([c, x, y]) => s += `<rect x="${x}" y="${y}" width="17" height="17" fill="${c}"/>`); return s + books(40, 22, 62); }
-      case 'archivo': { let s = ''; for (let i = 0; i < 3; i++) s += `<rect x="${40 + i * 24}" y="30" width="21" height="54" rx="2" fill="#2B3E66"/><rect x="${46 + i * 24}" y="40" width="9" height="2.5" fill="#C9D6EA"/><rect x="${46 + i * 24}" y="58" width="9" height="2.5" fill="#C9D6EA"/>`; return s + screen(200, 22, 78, 46, 5); }
-      case 'juridico': return books(36, 22, 74) + books(210, 22, 70) + `<g transform="translate(160 30)" stroke="#95762F" stroke-width="2" fill="none"><path d="M0 0 V26 M-14 6 H14"/><path d="M-14 6 L-20 18 H-8 Z M14 6 L8 18 H20 Z" fill="#E9D9AE"/></g>`;
-      case 'comunicado': return screen(40, 22, 86, 50, 5) + `<rect x="204" y="26" width="64" height="20" rx="10" fill="#FFFFFF"/><rect x="214" y="50" width="56" height="18" rx="9" fill="#E9D9AE"/>`;
-      case 'correo': return books(40, 22, 64) + screen(204, 24, 72, 42, 4);
-      case 'disenador': { let s = ''; ['#1A3867', '#95762F', '#FFFFFF', '#2B5297', '#E9D9AE'].forEach((c, i) => s += `<rect x="${42 + i * 15}" y="28" width="12" height="34" fill="${c}" stroke="#C9D6EA"/>`); return s + `<rect x="206" y="22" width="68" height="50" rx="2" fill="#FFFFFF" stroke="#95762F"/><circle cx="240" cy="42" r="12" fill="#C9D6EA"/><rect x="216" y="58" width="48" height="5" fill="#1A3867"/>`; }
-      case 'agenda': { let s = `<rect x="188" y="20" width="90" height="60" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/><rect x="188" y="20" width="90" height="12" rx="3" fill="#1A3867"/>`; for (let r = 0; r < 3; r++) for (let c = 0; c < 6; c++) s += `<rect x="${193 + c * 14}" y="${37 + r * 13}" width="11" height="10" fill="${(r * 6 + c) % 5 === 1 ? '#E9D9AE' : '#EDF2FA'}"/>`; return s + books(40, 22, 60); }
+      case 'coordinacion': { let s = `<rect x="186" y="20" width="96" height="58" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/>`; [['#E9D9AE', 194, 28], ['#C9D6EA', 216, 28], ['#E9D9AE', 238, 28], ['#C9D6EA', 260, 30], ['#C9D6EA', 194, 52], ['#E9D9AE', 220, 52], ['#C9D6EA', 246, 50]].forEach(([c, x, y]) => s += `<rect x="${x}" y="${y}" width="17" height="17" fill="${c}"/>`); return s + books(40, 22, 62); }
+      case 'bandeja': { let s = ''; for (let i = 0; i < 3; i++) s += `<rect x="${40 + i * 24}" y="30" width="21" height="54" rx="2" fill="#2B3E66"/><rect x="${46 + i * 24}" y="40" width="9" height="2.5" fill="#C9D6EA"/><rect x="${46 + i * 24}" y="58" width="9" height="2.5" fill="#C9D6EA"/>`; return s + screen(200, 22, 78, 46, 5); }
+      case 'peticiones': return books(36, 22, 74) + books(210, 22, 70) + `<g transform="translate(160 30)" stroke="#95762F" stroke-width="2" fill="none"><path d="M0 0 V26 M-14 6 H14"/><path d="M-14 6 L-20 18 H-8 Z M14 6 L8 18 H20 Z" fill="#E9D9AE"/></g>`;
+      case 'textos': return books(40, 22, 64) + screen(204, 24, 72, 42, 4);
+      case 'piezas': { let s = ''; ['#1A3867', '#95762F', '#FFFFFF', '#2B5297', '#E9D9AE'].forEach((c, i) => s += `<rect x="${42 + i * 15}" y="28" width="12" height="34" fill="${c}" stroke="#C9D6EA"/>`); return s + `<rect x="206" y="22" width="68" height="50" rx="2" fill="#FFFFFF" stroke="#95762F"/><circle cx="240" cy="42" r="12" fill="#C9D6EA"/><rect x="216" y="58" width="48" height="5" fill="#1A3867"/>`; }
     }
     return '';
   }
-  function avatarG(a, k) {
-    const working = office.status[k];
-    return `<g class="avatar ${working ? 'working' : ''}"><g class="bob">
-      <rect x="138" y="96" width="24" height="34" rx="10" fill="${a.shirt}"/>
-      <circle cx="150" cy="88" r="10" fill="#E9C6A1"/>
-      <path d="M139.6 87 a10.4 10.4 0 0 1 20.8 0 q-10.4 -5.5 -20.8 0z" fill="${a.hair}"/></g></g>`;
-  }
   function roomSvg(k) {
-    const a = AGENTS[k], rug = ROOM_INFO[k].rug, working = !!office.status[k];
+    const a = AGENTS[k], working = !!office.status[k];
+    const rug = k === 'entrada' ? '#C9A54C' : a.rug;
     let floor = '';
     for (let i = 1; i < 10; i++) floor += `<line x1="${24 + i * 27.2}" y1="96" x2="${4 + i * 31.2}" y2="216" stroke="#CDAE7E" stroke-width="1"/>`;
-    const desk = `<polygon points="112,132 214,132 224,144 102,144" fill="#FFFFFF"/><rect x="102" y="144" width="122" height="24" fill="#E3E9F3"/><rect x="106" y="168" width="5" height="14" fill="#C9D6EA"/><rect x="215" y="168" width="5" height="14" fill="#C9D6EA"/>
-      <rect x="176" y="106" width="38" height="25" rx="2" fill="#1C2742"/><rect x="179" y="109" width="32" height="19" rx="1" fill="${working ? '#3E6DB5' : '#24324F'}" class="${working ? 'glow' : ''}"/><rect x="192" y="131" width="6" height="3" fill="#1C2742"/>`;
-    let people = '';
+    let people;
     if (k === 'entrada') {
       people = `<polygon points="96,128 230,128 240,140 86,140" fill="#FFFFFF"/><rect x="86" y="140" width="154" height="30" fill="#E3E9F3"/><rect x="86" y="140" width="154" height="5" fill="#95762F"/>
         <rect x="120" y="116" width="26" height="14" rx="2" fill="#FFFFFF" stroke="#C9D6EA"/><rect x="150" y="112" width="26" height="18" rx="2" fill="#FFFFFF" stroke="#C9D6EA"/><path d="M150 112 L163 122 L176 112" stroke="#95762F" fill="none"/>`;
     } else {
-      people = `<rect x="134" y="92" width="32" height="38" rx="7" fill="#2B5297"/>` + avatarG(a, k) + desk;
+      people = `<rect x="134" y="92" width="32" height="38" rx="7" fill="#2B5297"/>
+        <g class="avatar ${working ? 'working' : ''}"><g class="bob"><rect x="138" y="96" width="24" height="34" rx="10" fill="${a.shirt}"/><circle cx="150" cy="88" r="10" fill="#E9C6A1"/><path d="M139.6 87 a10.4 10.4 0 0 1 20.8 0 q-10.4 -5.5 -20.8 0z" fill="${a.hair}"/></g></g>
+        <polygon points="112,132 214,132 224,144 102,144" fill="#FFFFFF"/><rect x="102" y="144" width="122" height="24" fill="#E3E9F3"/><rect x="106" y="168" width="5" height="14" fill="#C9D6EA"/><rect x="215" y="168" width="5" height="14" fill="#C9D6EA"/>
+        <rect x="176" y="106" width="38" height="25" rx="2" fill="#1C2742"/><rect x="179" y="109" width="32" height="19" rx="1" fill="${working ? '#3E6DB5' : '#24324F'}" class="${working ? 'glow' : ''}"/><rect x="192" y="131" width="6" height="3" fill="#1C2742"/>`;
     }
-    const extra = k === 'agenda' ? `<ellipse cx="258" cy="178" rx="26" ry="9" fill="#FFFFFF" stroke="#C9D6EA"/>` : k === 'disenador' ? `<polygon points="244,150 270,150 262,196 252,196" fill="#B39C66"/>` : `<rect x="236" y="168" width="44" height="22" rx="8" fill="#D9C690"/><rect x="236" y="160" width="44" height="12" rx="6" fill="#C9B68A"/>`;
+    const extra = k === 'piezas' ? `<polygon points="244,150 270,150 262,196 252,196" fill="#B39C66"/>` : `<rect x="236" y="168" width="44" height="22" rx="8" fill="#D9C690"/><rect x="236" y="160" width="44" height="12" rx="6" fill="#C9B68A"/>`;
     return `<svg viewBox="0 0 320 220" class="room-svg" aria-hidden="true">
       <rect x="0" y="0" width="320" height="220" rx="12" fill="#0E1D38"/>
       <polygon points="24,10 296,10 296,96 24,96" fill="#E4EBF6"/>
@@ -900,38 +816,40 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       <polygon points="24,96 296,96 316,216 4,216" fill="#E6D0A8"/>${floor}
       <line x1="24" y1="96" x2="296" y2="96" stroke="#B89A6A" stroke-width="2"/>
       ${wallDecor(k)}
-      <ellipse cx="160" cy="176" rx="104" ry="30" fill="${rug}" opacity=".6"/>
-      ${extra}
+      <ellipse cx="160" cy="176" rx="104" ry="30" fill="${rug}" opacity=".6"/>${extra}
       <rect x="28" y="168" width="18" height="16" rx="2" fill="#C9B68A"/><circle cx="37" cy="158" r="12" fill="#3C8D5A"/><circle cx="31" cy="150" r="7" fill="#4FA66D"/>
       ${people}
     </svg>`;
   }
-
+  function roomCount(k) {
+    if (k === 'entrada') return 0;
+    let n = office.pending.filter(i => i.agent === k).length;
+    if (k === 'peticiones' && office.work.peticiones.step === 2) n++;
+    if (k === 'bandeja' && office.inbox) n += (office.inbox.derechos || []).length;
+    return n;
+  }
   function roomHtml(k) {
-    const isEntrada = k === 'entrada';
-    const a = AGENTS[k];
-    const today = todayStr();
-    const n = isEntrada ? tasks.filter(t => t.created && new Date(t.created).toLocaleDateString('en-CA', { timeZone: TZ }) === today).length
-      : queueOf(k).length + tasks.filter(t => t.agent === k && t.status === 'review').length + openFindings(k).length;
+    const a = AGENTS[k], isE = k === 'entrada';
     const act = office.activity[k], fl = office.flash[k] && Date.now() - office.flash[k].t < 9000 ? office.flash[k] : null;
-    const st = isEntrada ? 'libre' : agentStatus(k);
+    const st = isE ? 'libre' : agentStatus(k), n = roomCount(k);
     let bubble = '';
-    if (!isEntrada && office.status[k] && act) bubble = `<div class="bubble"><div class="b-head"><span class="dot" style="background:${a.shirt}"></span>${esc(a.name)} <em>${esc(act.verb)}</em><time>${esc(ago(act.t))}</time></div>${esc(act.text)}</div>`;
-    else if (fl) bubble = `<div class="done-card"><small>✓ LISTO · ${esc(a.name.toUpperCase())}</small><b>${esc(fl.title)}</b>${fl.sub ? `<span>${esc(fl.sub)}</span>` : ''}</div>`;
-    return `<div class="room ${office.open === k ? 'focus' : ''} ${office.open && office.open !== k ? 'dim' : ''}" data-room="${k}" style="--rug:${ROOM_INFO[k].rug}">
+    if (!isE && office.status[k] && act) bubble = `<div class="bubble"><div class="b-head"><span class="dot" style="background:${a.shirt}"></span>${esc(a.name)} <em>${esc(act.verb)}</em><time>${esc(ago(act.t))}</time></div>${esc(act.text)}</div>`;
+    else if (fl) bubble = `<div class="done-card"><small>✓ LISTO · ${esc(a.name.toUpperCase())}</small><b>${esc(fl.title.replace(/^[^·]+·\s*/, '').slice(0, 48))}</b>${fl.sub ? `<span>${esc(fl.sub)}</span>` : ''}</div>`;
+    else if (k === 'peticiones' && office.work.peticiones.step === 2 && !office.status[k]) bubble = `<div class="bubble"><div class="b-head"><span class="dot" style="background:${a.shirt}"></span>Daniela <em>PREGUNTA</em></div>Tengo ${(office.work.peticiones.analysis?.preguntas || []).length} preguntas antes de redactar.</div>`;
+    return `<div class="room ${office.open === k ? 'focus' : ''} ${office.open && office.open !== k ? 'dim' : ''}" data-room="${k}" tabindex="0" role="button" aria-label="${esc(ROOM_LABEL(k))}">
       ${roomSvg(k)}
-      <span class="room-tag"><span class="dot" style="background:${isEntrada ? BRAND.dorado : a.shirt}"></span>${esc(ROOM_INFO[k].label)}</span>
+      <span class="room-tag"><span class="dot" style="background:${isE ? BRAND.dorado : a.shirt}"></span>${esc(ROOM_LABEL(k))}</span>
       ${n ? `<span class="room-count">${n}</span>` : ''}
-      ${isEntrada ? `<span class="room-pill entrada-pill">${n ? `${n} entraron hoy` : 'Deja aquí un pendiente'}</span>` : `<span class="room-pill"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${esc(a.name)}${office.status[k] ? '<span class="working-bar"></span>' : ''}</span>`}
+      ${isE ? `<span class="room-pill entrada-pill">Enviar al equipo</span>` : `<span class="room-pill"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${esc(a.name)}${office.status[k] ? '<span class="working-bar"></span>' : ''}</span>`}
       ${bubble}
     </div>`;
   }
 
-  // ---- Columnas
+  // ---------------------------------------------------------------- Columnas laterales
   function teamHtml() {
     return Object.entries(AGENTS).map(([k, a]) => {
-      const st = agentStatus(k), q = queueOf(k).length, f = openFindings(k).length, act = office.activity[k];
-      const sub = office.status[k] && act ? `${act.verb.toLowerCase()} · ${act.text}` : st === 'aprobacion' ? 'Tiene algo listo para ti' : q ? `${q} en su bandeja` : f ? `${f} hallazgos en el correo` : a.role;
+      const st = agentStatus(k), act = office.activity[k];
+      const sub = office.status[k] && act ? `${act.verb.toLowerCase()} · ${act.text}` : st === 'pregunta' ? 'Tiene preguntas para ti' : st === 'aprobacion' ? 'Tiene algo listo para ti' : a.role;
       return `<button class="team-row ${office.open === k ? 'active' : ''}" data-agent="${k}">
         <span class="p-avatar sm" style="background:${a.shirt}">${esc(a.name[0])}</span>
         <span class="tr-main"><b>${esc(a.name)}</b><small>${esc(sub)}</small></span>
@@ -940,63 +858,62 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     }).join('');
   }
   function chatHtml() {
-    const rows = office.log.slice(0, 9);
+    const rows = office.log.slice(0, 8);
     return rows.length ? rows.map(e => `<div class="chat-row ${e.ok ? '' : 'err'}">
         <span class="p-avatar xs" style="background:${AGENTS[e.agent]?.shirt || BRAND.dorado}">${esc((AGENTS[e.agent]?.name || 'E')[0])}</span>
         <div><b>${esc(who(e.agent))}${e.to ? ' → ' + esc(who(e.to)) : ''}</b><time>${esc(hhmm(e.t))}</time><p>${esc(e.text)}</p></div></div>`).join('')
       : '<p class="sub">Aquí verás cómo se pasan el trabajo entre ellos.</p>';
   }
   function forYouItems() {
-    const items = [], today = todayStr();
-    tasks.filter(t => t.status === 'review').forEach(t => items.push({ k: t.agent, big: AGENTS[t.agent]?.name || 'Revisión', title: t.title, sub: t.project, ok: true, open: t.agent, task: t.id }));
-    const pet = openFindings('juridico');
-    if (pet.length) {
-      const next = pet.filter(p => p.vence).sort((a, b) => a.vence.localeCompare(b.vence))[0];
-      items.push({ k: 'juridico', big: `${pet.length} ${pet.length === 1 ? 'petición' : 'peticiones'}`, title: 'sin responder en el correo', sub: next ? `La más próxima vence ${fmtDate(next.vence)}` : 'Daniela las revisó', urgent: next && next.vence <= addBusinessDays(today, 3), open: 'juridico', tab: 'hallazgos' });
+    const items = [], today = todayStr(), tomorrow = addDays(today, 1);
+    office.pending.forEach(i => items.push({ k: i.agent, big: AGENTS[i.agent].role, title: i.title, sub: `${i.project || ''} · ${ago(i.date)}`, ok: true, repo: i.id }));
+    if (office.work.peticiones.step === 2) items.push({ k: 'peticiones', big: 'Daniela pregunta', title: 'Responde sus dudas para generar el borrador', ok: true, open: 'peticiones' });
+    const ib = office.inbox;
+    if (ib) {
+      const ders = (ib.derechos || []).filter(d => d.vence);
+      const next = ders.sort((a, b) => a.vence.localeCompare(b.vence))[0];
+      if ((ib.derechos || []).length) items.push({ k: 'bandeja', big: `${ib.derechos.length} ${ib.derechos.length === 1 ? 'derecho de petición' : 'derechos de petición'}`, title: 'sin leer en tu correo', sub: next ? `El más próximo vence ${fmtDate(next.vence)}` : '', urgent: next && next.vence <= addBusinessDays(today, 3), open: 'bandeja' });
+      const cit = (ib.citaciones || []).filter(c => c.fecha === today || c.fecha === tomorrow);
+      if (cit.length) items.push({ k: 'bandeja', big: `${cit.length} ${cit.length === 1 ? 'citación' : 'citaciones'}`, title: cit[0].asunto, sub: cit[0].fecha === today ? 'Hoy' + (cit[0].hora ? ' ' + cit[0].hora : '') : 'Mañana', urgent: cit[0].fecha === today, open: 'bandeja' });
     }
-    const imp = openFindings('archivo');
-    if (imp.length) items.push({ k: 'archivo', big: `${imp.length} correos`, title: 'importantes por atender', sub: imp[0].subject, open: 'archivo', tab: 'hallazgos' });
-    const meet = openFindings('agenda');
-    if (meet.length) items.push({ k: 'agenda', big: `${meet.length} reuniones`, title: 'detectadas en el correo', sub: meet[0].titulo || meet[0].subject, open: 'agenda', tab: 'hallazgos' });
     const overdue = tasks.filter(t => t.status !== 'done' && t.due && t.due < today);
-    if (overdue.length) items.push({ k: 'planificador', big: `${overdue.length} vencidas`, title: overdue[0].title, sub: 'Valeria sugiere reprogramar o delegar', urgent: true, open: 'planificador' });
+    if (overdue.length) items.push({ k: null, big: `${overdue.length} ${overdue.length === 1 ? 'tarea vencida' : 'tareas vencidas'}`, title: overdue[0].title, urgent: true, tareas: true });
     const dueToday = tasks.filter(t => t.status !== 'done' && t.due === today);
-    if (dueToday.length) items.push({ k: 'agenda', big: `${dueToday.length} para hoy`, title: dueToday[0].title, sub: dueToday[0].project, open: 'agenda' });
+    if (dueToday.length) items.push({ k: null, big: `${dueToday.length} para hoy`, title: dueToday[0].title, sub: dueToday[0].time ? dueToday[0].time : '', tareas: true });
     return items;
   }
   function forYouHtml() {
     const items = forYouItems();
     return items.length ? items.map((it, i) => `<button class="fy ${it.urgent ? 'urgent' : ''}" data-fy="${i}">
-        <span class="p-avatar sm" style="background:${AGENTS[it.k]?.shirt || BRAND.azul}">${esc((AGENTS[it.k]?.name || 'A')[0])}</span>
-        <span class="fy-main"><b>${esc(it.big)}</b><small>${esc(it.title)}</small>${it.sub ? `<em>${esc(it.sub)}</em>` : ''}</span>
+        <span class="p-avatar sm" style="background:${it.k ? AGENTS[it.k].shirt : BRAND.dorado}">${esc(it.k ? AGENTS[it.k].name[0] : '✓')}</span>
+        <span class="fy-main"><b>${esc(it.big)}</b><small>${esc(it.title || '')}</small>${it.sub ? `<em>${esc(it.sub)}</em>` : ''}</span>
         ${it.ok ? '<span class="tu-ok">TU OK</span>' : it.urgent ? '<span class="tu-ok red">URGENTE</span>' : ''}
       </button>`).join('') : '<p class="sub">Nada te espera. El equipo está al día.</p>';
   }
-  function statsHtml() {
-    const done = tasks.filter(t => t.status === 'done' && t.doneAt > Date.now() - 7 * 864e5).length;
-    const working = Object.keys(office.status).length;
-    const ok = tasks.filter(t => t.status === 'review').length;
-    return `<div class="stat-card"><b>${done}</b><small>resueltas esta semana</small></div>
-      <div class="stat-card"><b>${tasks.filter(t => t.status !== 'done').length}</b><small>pendientes</small></div>
-      <div class="stat-card ${ok ? 'accent' : ''}"><b>${ok}</b><small>esperan tu OK</small></div>
-      <div class="working-now"><span class="dot" style="background:${working ? '#C9A54C' : '#2E7D4F'}"></span>${working ? `${working} trabajando` : 'Equipo disponible'}</div>`;
+  function inboxCardHtml() {
+    const ib = office.inbox;
+    const body = ib ? `<p class="ib-sum">${esc(ib.resumen || '')}</p>
+        <div class="ib-chips">${(ib.grupos || []).slice(0, 6).map(g => `<span class="chip">${esc(g.tema)} · <b>${g.cantidad}</b></span>`).join('')}</div>
+        <small class="sub">${ib.total || 0} sin leer · ${esc(ago(ib.at))}</small>`
+      : '<p class="sub">Sofía puede resumirte los correos no leídos.</p>';
+    return `${body}
+      <div class="toolbar" style="margin-top:8px"><button class="btn btn-gold btn-sm" id="ibRefresh" ${office.status.bandeja ? 'disabled' : ''}>${office.status.bandeja ? 'Leyendo…' : ib ? 'Actualizar' : 'Resumir mi bandeja'}</button><button class="btn btn-ghost btn-sm" id="ibOpen">Ver detalle</button></div>
+      <form id="findMini" class="find-mini"><input name="q" placeholder="¿Buscas un correo? Escribe lo que recuerdes" aria-label="Buscar un correo"><button class="btn btn-primary btn-sm">Buscar</button></form>`;
   }
-  function chipsHtml() {
-    const total = tasks.filter(t => t.status !== 'done').length;
-    return `<button class="room-chip ${!office.open ? 'active' : ''}" data-chip="">Toda la oficina <b>${Object.keys(AGENTS).length}</b></button>` +
-      ROOM_ORDER.filter(k => k !== 'entrada').map(k => {
-        const n = queueOf(k).length + tasks.filter(t => t.agent === k && t.status === 'review').length + openFindings(k).length;
-        return `<button class="room-chip ${office.open === k ? 'active' : ''}" data-chip="${k}"><span class="dot" style="background:${AGENTS[k].shirt}"></span>${esc(ROOM_INFO[k].label)} <b>${n}</b></button>`;
-      }).join('') + `<span class="chip-total">${total} pendientes en total</span>`;
+  function statsHtml() {
+    const open = tasks.filter(t => t.status !== 'done'), today = todayStr();
+    return `<div class="stat-card"><b>${open.length}</b><small>tareas pendientes</small></div>
+      <div class="stat-card"><b>${open.filter(t => t.due && t.due <= today).length}</b><small>para hoy o vencidas</small></div>
+      <div class="stat-card ${office.pending.length ? 'accent' : ''}"><b>${office.pending.length}</b><small>esperan tu OK</small></div>`;
   }
 
   views.agencia = () => `
     <div class="office2">
       <header class="o-head">
-        <div><h1>La oficina</h1><p class="sub">Siete agentes, cada uno en lo suyo. Lo que necesita tu aprobación te espera en «Para ti».</p></div>
-        <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : 'Conectando IA…'}</div>
+        <div><h1>La oficina</h1><p class="sub">Cinco agentes, cada uno en lo suyo. Solo trabajan cuando les envías algo; lo que necesita tu aprobación queda en «Para ti».</p></div>
+        <div class="o-head-actions"><button class="btn btn-ghost btn-sm" id="goRepo">🗂️ Entregables</button>
+          <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : 'Conectando IA…'}</div></div>
       </header>
-      <nav class="room-chips" id="chips"></nav>
       <div class="o-grid">
         <aside class="o-left">
           <section class="o-card"><h3>Tu equipo <span>${Object.keys(AGENTS).length}</span></h3><div id="team"></div></section>
@@ -1004,15 +921,12 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
         </aside>
         <section class="o-center">
           <div class="stage2" id="stage"><div class="o-banner" id="banner" hidden></div><div class="rooms" id="rooms"></div></div>
-          <div class="o-hint">Toca una sala para ver el trabajo de su agente.</div>
+          <div class="o-hint">Toca una sala para trabajar con su agente. La Entrada sirve para enviarle algo al equipo.</div>
         </section>
         <aside class="o-right">
           <section class="o-stats" id="stats"></section>
           <section class="o-card"><h3>✓ Para ti</h3><div id="foryou"></div></section>
-          <section class="o-card scans-card"><h3>Revisar el correo</h3>
-            ${['archivo', 'juridico', 'agenda'].map(k => `<button class="btn btn-ghost btn-sm scan-btn" data-scan="${k}">${esc(SCANS[k].button)}</button>`).join('')}
-            <p class="sub" style="margin:6px 0 0;font-size:12px">Solo lectura: nada se envía ni se marca.</p>
-          </section>
+          <section class="o-card"><h3>✉️ Tu bandeja</h3><div id="inboxCard"></div></section>
         </aside>
       </div>
       <aside class="agent-panel" id="panel" hidden></aside>
@@ -1026,31 +940,39 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
   function renderRooms() {
     const el = $('#rooms'); if (!el) return;
     el.innerHTML = ROOM_ORDER.map(roomHtml).join('');
-    el.querySelectorAll('[data-room]').forEach(r => r.onclick = () => {
-      const k = r.dataset.room;
-      if (k === 'entrada') { const ta = $('#cmdbar textarea'); if (ta) { ta.focus(); ta.scrollIntoView({ block: 'center' }); } return; }
-      openAgent(k);
+    el.querySelectorAll('[data-room]').forEach(r => {
+      const go = () => openAgent(r.dataset.room === 'entrada' ? 'coordinacion' : r.dataset.room, true);
+      r.onclick = go; r.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
     });
   }
   function renderOfficeSide() {
+    if (ui.view !== 'agencia') return;
     const set = (id, html) => { const e = $(id); if (e) e.innerHTML = html; };
-    set('#chips', chipsHtml()); set('#team', teamHtml()); set('#talk', chatHtml()); set('#stats', statsHtml()); set('#foryou', forYouHtml());
-    document.querySelectorAll('#chips [data-chip]').forEach(b => b.onclick = () => { const k = b.dataset.chip; if (!k) { office.open = null; renderPanel(); renderOffice(); } else openAgent(k, true); });
+    set('#team', teamHtml()); set('#talk', chatHtml()); set('#stats', statsHtml()); set('#foryou', forYouHtml());
+    const ic = $('#inboxCard'); if (ic && !(ic.contains(document.activeElement) && document.activeElement.tagName === 'INPUT')) { ic.innerHTML = inboxCardHtml(); bindInboxCard(); }
     document.querySelectorAll('#team [data-agent]').forEach(b => b.onclick = () => openAgent(b.dataset.agent, true));
     const items = forYouItems();
-    document.querySelectorAll('#foryou [data-fy]').forEach(b => b.onclick = () => { const it = items[Number(b.dataset.fy)]; openAgent(it.open, true, it.tab); });
-    document.querySelectorAll('[data-scan]').forEach(b => b.onclick = () => runScan(b.dataset.scan));
+    document.querySelectorAll('#foryou [data-fy]').forEach(b => b.onclick = async () => {
+      const it = items[Number(b.dataset.fy)];
+      if (it.tareas) return setView('tareas');
+      if (it.repo) { const item = await repo.get(it.repo); if (item) openRepoItem(item, () => { loadPending().then(refreshOffice); }); return; }
+      openAgent(it.open, true);
+    });
+    const gr = $('#goRepo'); if (gr) gr.onclick = () => setView('repo');
+  }
+  function bindInboxCard() {
+    const r = $('#ibRefresh'); if (r) r.onclick = () => runInboxSummary();
+    const o = $('#ibOpen'); if (o) o.onclick = () => openAgent('bandeja', true);
+    const f = $('#findMini'); if (f) f.onsubmit = e => { e.preventDefault(); const q = f.q.value.trim(); if (!q) return; office.work.bandeja.query = q; openAgent('bandeja', true); findEmail(q); };
   }
   function renderOffice() { renderRooms(); renderOfficeSide(); renderBanner(); }
-  const renderLog = () => { if (ui.view === 'agencia') renderOfficeSide(); };
   function renderScene() { if (ui.view === 'agencia') renderOffice(); }
+  const renderLog = () => renderOfficeSide();
   function refreshOffice() {
     if (ui.view !== 'agencia') return;
     renderOffice();
     const p = $('#panel'); if (office.open && !(p && p.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderPanel();
   }
-
-  // Papel que vuela de una sala a otra cuando un agente le pasa trabajo a otro.
   function flyBetween(from, to) {
     if (ui.view !== 'agencia') return;
     const a = document.querySelector(`[data-room="${from}"]`), b = document.querySelector(`[data-room="${to}"]`);
@@ -1063,187 +985,33 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     setTimeout(() => f.remove(), 1300);
   }
 
-  // ---------------------------------------------------------------- Revisiones del correo (solo lectura)
-  const SCANS = {
-    archivo: {
-      button: '✉️ Sofía: correos importantes', verb: 'REVISA', text: 'la bandeja de entrada',
-      query: 'in:inbox newer_than:4d -category:promotions -category:social', view: 'THREAD_VIEW_SUMMARY',
-      prompt: () => `Eres Sofía, archivista de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (administración de propiedad horizontal en Colombia). Recibes una lista de hilos recientes de la bandeja de entrada (solo metadatos). Elige los que requieren acción o atención del coordinador, máximo 8, ordenados por importancia. Ignora notificaciones automáticas, reacciones, publicidad y correos solo informativos sin acción. Proyectos válidos: ${projects.join(', ')}.
-Responde SOLO JSON: {"items":[{"id":"id del hilo","importancia":"alta|media","motivo":"por qué importa, una frase","accion":"qué conviene hacer, una frase","agente":"correo|juridico|comunicado|disenador|agenda|planificador","proyecto":"uno de la lista o General / AGI"}]}`
-    },
-    juridico: {
-      button: '⚖️ Daniela: derechos de petición', verb: 'BUSCA', text: 'derechos de petición y tutelas',
-      query: '("derecho de petición" OR "derechos de petición" OR "derecho de peticion" OR tutela OR PQR OR PQRS OR petición OR label:derechos-de-petición) newer_than:120d', view: 'THREAD_VIEW_MINIMAL',
-      prompt: () => `Eres Daniela, asesora jurídica de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (propiedad horizontal, Colombia). Recibes hilos de correo (metadatos y un fragmento). Identifica SOLO derechos de petición, tutelas, PQR o requerimientos formales dirigidos a la administración o al conjunto; descarta lo demás. El campo "enviadoPorNosotros" indica si en el hilo hay un mensaje enviado desde esta cuenta. Proyectos válidos: ${projects.join(', ')}.
-Responde SOLO JSON: {"items":[{"id":"id del hilo","tipo":"Derecho de petición|Tutela|PQR|Requerimiento","plazoDias":10|15|30|null,"peticionario":"quién lo presenta","asunto":"resumen corto","requiereRespuesta":true|false,"motivo":"estado y recomendación en una frase","proyecto":"uno de la lista o General / AGI"}]}. Plazos Ley 1755 de 2015: 15 días hábiles en general, 10 para documentos o información, 30 para consultas; tutela: null.`
-    },
-    agenda: {
-      button: '📅 Andrés: reuniones e invitaciones', verb: 'BUSCA', text: 'reuniones e invitaciones',
-      query: '(invitación OR invitation OR reunión OR visita OR comité OR asamblea OR "Google Meet") newer_than:14d', view: 'THREAD_VIEW_SUMMARY',
-      prompt: () => `Eres Andrés, encargado de la agenda de la Coordinación de Proyectos de Alianza Grupo Inmobiliario. Hoy es ${todayStr()}. De estos hilos, identifica reuniones, visitas, comités o asambleas con fecha futura o de hoy. Proyectos válidos: ${projects.join(', ')}.
-Responde SOLO JSON: {"items":[{"id":"id del hilo","titulo":"nombre corto del evento","fecha":"YYYY-MM-DD","hora":"HH:MM o null","lugar":"lugar o enlace, corto","proyecto":"uno de la lista o General / AGI"}]}`
-    }
-  };
-  const ymd = iso => iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }) : '';
-  function businessDaysLeft(due) {
-    const t = todayStr(); if (due <= t) return due === t ? 0 : -1;
-    let n = 0, d = t; while (d < due && n < 60) { d = addBusinessDays(d, 1); n++; } return n;
-  }
-
-  async function runScan(k) {
-    const sc = SCANS[k], a = AGENTS[k];
-    if (!HOST.mcp) return toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'La revisión automática del correo funciona en la versión publicada en claude.ai.');
-    if (!hasClaude()) return toast('Claude aún no está disponible.');
-    if (office.status[k]) return;
-    office.status[k] = 'trabajando'; office.activity[k] = { verb: sc.verb, text: sc.text, t: Date.now() };
-    logEvent(k, `Revisando ${sc.text}`);
-    refreshOffice();
-    try {
-      const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query: sc.query, pageSize: 25, view: sc.view });
-      const threads = (r.payload && r.payload.threads) || [];
-      const rows = threads.map(th => {
-        const ms = th.messages || [], first = ms[0] || {}, last = ms[ms.length - 1] || {};
-        const nm = (m) => ((m.addressDisplayNames || []).find(x => x.emailAddress === m.sender) || {}).displayName || m.sender || '';
-        return { id: th.id, asunto: last.subject || first.subject || '', de: nm(first), ultimoDe: nm(last), primerMensaje: ymd(first.date), ultimoMensaje: ymd(last.date), mensajes: th.messageCount || ms.length,
-          enviadoPorNosotros: ms.some(m => (m.labelIds || []).includes('SENT')), sinLeer: ms.some(m => (m.labelIds || []).includes('UNREAD')), fragmento: decodeEntities(last.snippet || first.snippet || '').slice(0, 260), url: th.viewUrl || '' };
-      });
-      let found = [];
-      if (rows.length) {
-        const raw = await askClaude(sc.prompt(), JSON.stringify(rows.map(({ url, ...x }) => x)));
-        const json = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
-        const byId = Object.fromEntries(rows.map(x => [x.id, x]));
-        const prev = Object.fromEntries(((office.scans[k] || {}).items || []).map(i => [i.id, i]));
-        found = (json.items || []).filter(i => byId[i.id]).map(i => {
-          const row = byId[i.id], it = { ...i, subject: row.asunto, from: row.de, date: row.ultimoMensaje, url: row.url, sent: row.enviadoPorNosotros, snippet: row.fragmento };
-          if (k === 'juridico') { it.radicado = row.primerMensaje; if (i.plazoDias) { it.vence = addBusinessDays(row.primerMensaje, Number(i.plazoDias)); it.dias = businessDaysLeft(it.vence); } }
-          if (prev[i.id]) { it.done = prev[i.id].done; it.dismissed = prev[i.id].dismissed; }
-          return it;
-        });
-        if (k === 'juridico') found.sort((x, y) => (x.vence || '9').localeCompare(y.vence || '9'));
-      }
-      office.scans[k] = { at: Date.now(), items: found };
-      saveScan(k); store.set('scanOk', true);
-      const pend = found.filter(i => k !== 'juridico' || i.requiereRespuesta !== false).length;
-      const msg = k === 'juridico' ? `Encontré ${found.length} ${found.length === 1 ? 'petición' : 'peticiones'}; ${pend} requieren respuesta` : k === 'agenda' ? `Encontré ${found.length} reuniones o visitas` : `Encontré ${found.length} correos que requieren atención`;
-      logEvent(k, msg, true, 'vos');
-      office.flash[k] = { title: msg, t: Date.now() };
-      if (office.open !== k) { office.open = k; }
-      office.tab = 'hallazgos';
-    } catch (e) {
-      const m = e?.code ? mcpMsg(e) : (e?.message || 'No se pudo revisar el correo.');
-      logEvent(k, 'No pude revisar el correo: ' + m, false, 'vos'); toast(m);
-    }
-    delete office.status[k];
-    refreshOffice(); renderPanel();
-  }
-
-  async function startFromFinding(k, i) {
-    const it = ((office.scans[k] || {}).items || [])[i]; if (!it) return;
-    const th = { id: it.id, subject: it.subject, from: it.from, date: it.date, snippet: it.snippet, url: it.url };
-    toast('Leyendo el correo…');
-    let text;
-    try { text = await threadText(th); } catch (e) { return toast(e?.code ? mcpMsg(e) : e.message); }
-    const project = projects.includes(it.proyecto) ? it.proyecto : matchProject(text);
-    if (k === 'agenda') {
-      tasks.push({ id: uid(), created: Date.now(), status: 'todo', agent: 'agenda', project, title: it.titulo || it.subject, priority: 'media', due: it.fecha || '', time: it.hora || '', remind: it.fecha ? '1440' : '', notes: `${it.lugar || ''}\nCorreo: ${it.url}`.trim(), steps: DEFAULT_STEPS.agenda, input: it.subject });
-      saveTasks(); logEvent('agenda', `Agendó «${it.titulo || it.subject}»`, true, 'vos');
-    } else if (k === 'juridico') {
-      const t = { id: uid(), created: Date.now(), status: 'todo', agent: 'juridico', project, title: `Responder ${it.tipo || 'petición'}: ${it.asunto || it.subject}`.slice(0, 110), priority: 'alta', mode: 'borrador', received: it.radicado || todayStr(),
-        input: text, steps: DEFAULT_STEPS.juridico, notes: `${it.motivo || ''}\nCorreo: ${it.url}`.trim(), auto: true, due: '', time: '', remind: '2880' };
-      const dias = Number(it.plazoDias) || 15;
-      t.legalDue = addBusinessDays(t.received, dias); t.due = addBusinessDays(t.received, Math.max(1, dias - 2));
-      tasks.push(t); saveTasks();
-      logEvent('juridico', `Empiezo el borrador de «${t.title}»`, true, 'vos');
-      startNext('juridico');
-    } else {
-      const created = await dispatch(text, { auto: true, project: it.proyecto && projects.includes(it.proyecto) ? it.proyecto : '' });
-      created.forEach(t => { t.notes = `${t.notes || ''}\nCorreo: ${it.url}`.trim(); flyBetween('archivo', t.agent); });
-      saveTasks();
-    }
-    it.done = true; saveScan(k);
-    refreshOffice(); renderPanel();
-  }
-
-  function findingsHtml(k) {
-    const sc = office.scans[k];
-    const head = `<div class="toolbar"><button class="btn btn-gold btn-sm" id="scanNow" ${office.status[k] ? 'disabled' : ''}>${office.status[k] ? 'Revisando…' : 'Revisar ahora'}</button>
-      <span class="sub" style="margin:0">${sc ? 'Última revisión ' + esc(ago(sc.at)) : 'Aún no he revisado el correo.'}</span></div>`;
-    if (!sc || !sc.items.length) return head + `<p class="sub">${sc ? 'No encontré nada pendiente.' : 'Toca «Revisar ahora»: leo tu correo en solo lectura y te digo qué hay.'}</p>`;
-    const cards = sc.items.map((it, i) => {
-      if (it.dismissed) return '';
-      let meta = '', btn = '';
-      if (k === 'juridico') {
-        const urg = it.dias != null && it.dias <= 3;
-        meta = `<span class="chip ${it.requiereRespuesta === false ? 'green' : urg ? 'red' : 'gold'}">${esc(it.tipo || 'Petición')}${it.requiereRespuesta === false ? ' · respondida' : ''}</span>
-          ${it.vence ? `<span class="chip ${urg ? 'red' : ''}">Vence ${esc(fmtDate(it.vence))}${it.dias != null ? ` · ${it.dias < 0 ? 'vencida' : it.dias + ' días hábiles'}` : ''}</span>` : ''}
-          ${it.radicado ? `<span class="chip">Recibida ${esc(fmtDate(it.radicado))}</span>` : ''}`;
-        btn = it.requiereRespuesta === false ? '' : `<button class="btn btn-primary btn-sm" data-start="${i}" ${it.done ? 'disabled' : ''}>${it.done ? '✓ En borrador' : 'Iniciar respuesta'}</button>`;
-      } else if (k === 'agenda') {
-        meta = `<span class="chip gold">${esc(it.fecha ? fmtDate(it.fecha) : 'sin fecha')}${it.hora ? ' · ' + esc(it.hora) : ''}</span>${it.lugar ? `<span class="chip">${esc(it.lugar)}</span>` : ''}`;
-        btn = `<button class="btn btn-primary btn-sm" data-start="${i}" ${it.done ? 'disabled' : ''}>${it.done ? '✓ Agendada' : 'Agregar a la agenda'}</button>`;
-      } else {
-        meta = `<span class="chip ${it.importancia === 'alta' ? 'red' : 'gold'}">${it.importancia === 'alta' ? 'Importante' : 'Atender'}</span>${AGENTS[it.agente] ? `<span class="chip">Sugiero: ${esc(AGENTS[it.agente].name)}</span>` : ''}`;
-        btn = `<button class="btn btn-primary btn-sm" data-start="${i}" ${it.done ? 'disabled' : ''}>${it.done ? '✓ Enviado al equipo' : 'Enviar al equipo'}</button>`;
-      }
-      return `<div class="finding ${it.done ? 'done' : ''}">
-        <b>${esc(k === 'agenda' ? (it.titulo || it.subject) : k === 'juridico' ? (it.asunto || it.subject) : it.subject)}</b>
-        <small>${esc(k === 'juridico' && it.peticionario ? it.peticionario : it.from)} · ${esc(it.proyecto || '')}</small>
-        <div class="t-meta">${meta}</div>
-        <p>${esc(it.motivo || it.accion || '')}${it.accion && it.motivo ? ' ' + esc(it.accion) : ''}</p>
-        <div class="toolbar">${btn}${it.url ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(it.url)}">Abrir en Gmail</a>` : ''}<button class="btn btn-ghost btn-sm" data-dismiss="${i}">Descartar</button></div>
-      </div>`;
-    }).join('');
-    return head + cards;
-  }
-  function bindFindings(k, panel) {
-    const sn = $('#scanNow', panel); if (sn) sn.onclick = () => runScan(k);
-    panel.querySelectorAll('[data-start]').forEach(b => b.onclick = () => { b.disabled = true; startFromFinding(k, Number(b.dataset.start)); });
-    panel.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { office.scans[k].items[Number(b.dataset.dismiss)].dismissed = true; saveScan(k); renderPanel(); renderOfficeSide(); renderRooms(); });
-  }
-
-  // Revisión automática: solo si ya diste permiso a Gmail antes y la última revisión es vieja.
-  function autoScans() {
-    if (office.autoRunning || !HOST.mcp || !hasClaude() || !store.get('scanOk', false)) return;
-    const old = k => !office.scans[k] || Date.now() - office.scans[k].at > 3 * 3600e3;
-    office.autoRunning = true;
-    (async () => { for (const k of ['juridico', 'archivo', 'agenda']) if (old(k)) await runScan(k); office.autoRunning = false; })();
-  }
-
-  function openAgent(k, force = false, tab = null) {
+  // ---------------------------------------------------------------- Panel del agente
+  function openAgent(k, force = false, tab = 'trabajo') {
     office.open = !force && office.open === k ? null : k;
-    office.tab = tab || (SCANS[k] && openFindings(k).length && !queueOf(k).length && !office.results[k] ? 'hallazgos' : 'trabajo');
+    office.tab = tab;
     renderOffice(); renderPanel();
+    const p = $('#panel'); if (p && !p.hidden && innerWidth < 760) p.scrollTop = 0;
   }
-
   function renderPanel() {
     const panel = $('#panel'); if (!panel) return;
     const k = office.open;
     if (!k) { panel.hidden = true; return; }
     const a = AGENTS[k], st = agentStatus(k);
     panel.hidden = false;
-    const tabNames = { trabajo: 'Trabajo', hallazgos: 'En el correo', actividad: 'Actividad', perfil: 'Perfil' };
-    const tabList = ['trabajo', ...(SCANS[k] ? ['hallazgos'] : []), 'actividad', 'perfil'];
-    if (!tabList.includes(office.tab)) office.tab = 'trabajo';
-    const tabs = tabList.map(t => `<button class="ptab ${office.tab === t ? 'active' : ''}" data-tab="${t}">${tabNames[t]}${t === 'hallazgos' && openFindings(k).length ? ` <b class="tab-n">${openFindings(k).length}</b>` : ''}</button>`).join('');
+    const tabs = [['trabajo', 'Trabajo'], ['historial', 'Entregas'], ['perfil', 'Perfil']].map(([t, l]) => `<button class="ptab ${office.tab === t ? 'active' : ''}" data-tab="${t}">${l}</button>`).join('');
     let body = '';
     if (office.tab === 'perfil') {
-      body = `<p class="bio">${esc(a.bio)}</p>
-        <h4>Responsabilidades</h4><ul>${a.resp.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+      body = `<p class="bio">${esc(a.bio)}</p><h4>Responsabilidades</h4><ul>${a.resp.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
         <h4>Herramientas</h4><div class="tools">${a.tools.map(t => `<code>${esc(t)}</code>`).join('')}</div>
-        <h4>Autonomía</h4><p class="sub">No envía, publica ni modifica nada sin tu visto bueno.</p>
-        <h4>Motor</h4><span class="chip ${a.engine === 'ChatGPT' ? 'gold' : ''}">${esc(HOST_FRAME && a.engine === 'ChatGPT' ? 'Plantilla institucional' : a.engine)}</span>`;
-    } else if (office.tab === 'actividad') {
-      const mine = office.log.filter(e => e.agent === k || e.to === k);
-      body = mine.length ? mine.map(e => `<div class="log-row ${e.ok ? '' : 'err'}"><time>${hhmmss(e.t)}</time><span>${e.ok ? '✔' : '⚠'}</span>${e.agent !== k ? `<b>${esc(who(e.agent))}:</b> ` : ''}${esc(e.text)}</div>`).join('') : '<div class="empty">Aún no tiene actividad.</div>';
-    } else if (office.tab === 'hallazgos') {
-      body = findingsHtml(k);
-    } else {
-      body = chatBody(k);
-    }
+        <h4>Autonomía</h4><p class="sub">Solo trabaja cuando le envías algo. No envía, publica ni modifica nada sin tu aprobación.</p>
+        ${k === 'peticiones' ? refsHtml() : ''}`;
+    } else if (office.tab === 'historial') {
+      body = '<div id="histList"><div class="empty">Cargando…</div></div>';
+    } else body = WORK[k].html();
     panel.innerHTML = `
       <header>
         <div class="p-avatar" style="background:${a.shirt}">${esc(a.name[0])}</div>
-        <div><strong>${esc(a.name)}</strong><small>${esc(a.role)} · ${esc(ROOM_INFO[k].label)}</small>
+        <div><strong>${esc(a.name)}</strong><small>${esc(a.role)}</small>
           <span class="p-status"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${STATUS_TXT[st]}</span></div>
         <button class="p-close" aria-label="Cerrar">×</button>
       </header>
@@ -1251,188 +1019,516 @@ Responde SOLO JSON: {"items":[{"id":"id del hilo","titulo":"nombre corto del eve
       <div class="p-body workspace">${body}</div>`;
     panel.querySelector('.p-close').onclick = () => { office.open = null; renderPanel(); renderOffice(); };
     panel.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { office.tab = b.dataset.tab; renderPanel(); });
-    if (office.tab === 'trabajo') bindChat(k, panel);
-    if (office.tab === 'hallazgos') bindFindings(k, panel);
+    if (office.tab === 'trabajo') WORK[k].bind(panel);
+    if (office.tab === 'perfil' && k === 'peticiones') bindRefs(panel);
+    if (office.tab === 'historial') repo.all().then(list => {
+      const mine = list.filter(i => i.agent === k).slice(0, 30), el = $('#histList', panel); if (!el) return;
+      el.innerHTML = mine.length ? mine.map(i => `<button class="repo-row hist" data-item="${esc(i.id)}"><div><b>${esc(i.title)}</b><small>${esc(i.project || '')} · ${esc(new Date(i.date).toLocaleDateString('es-CO', { timeZone: TZ }))}</small></div><span class="chip ${i.status === 'aprobado' ? 'green' : 'gold'}">${i.status === 'aprobado' ? 'Aprobado' : 'Borrador'}</span></button>`).join('') : '<div class="empty">Aún no ha entregado nada.</div>';
+      el.querySelectorAll('[data-item]').forEach(b => b.onclick = () => openRepoItem(mine.find(i => i.id === b.dataset.item), () => { loadPending().then(refreshOffice); }));
+    }).catch(() => {});
   }
 
-  function chatBody(k) {
-    if (k === 'archivo') return `
-      <p>Hola, soy Sofía. Reviso tu Gmail <b>solo en lectura</b>: las carpetas de cada proyecto, los pendientes y los logos adjuntos.</p>
-      <div class="notice">Permiso usado: <code>gmail.readonly</code>. Con él no puedo enviar, responder, borrar ni marcar correos.</div>
-      <p class="sub">${gmail.token ? `Conectada · ${gmail.labels.length} carpetas.` : 'Aún no estoy conectada.'} Logos guardados: ${logos.length}.</p>
-      <button class="btn btn-primary" id="goMail">${gmail.token ? 'Abrir carpetas' : 'Conectar Gmail (solo lectura)'}</button>`;
-    if (k === 'agenda') {
-      const next = tasks.filter(t => t.status !== 'done' && t.due).sort((x, y) => (x.due + x.time).localeCompare(y.due + y.time)).slice(0, 6);
-      const aq = queueOf('agenda');
-      return `<p>Soy Andrés. Te aviso antes de cada vencimiento y paso tus pendientes al calendario.</p>
-        ${aq.length ? `<h4>Por agendar (${aq.length})</h4>${aq.map(t => `<div class="mini-task"><div><b>${esc(t.title)}</b><small>${esc(t.project)}${t.due ? ' · ' + esc(fmtDate(t.due)) + (t.time ? ' ' + esc(t.time) : '') : ' · sin fecha'}</small></div>
-          <div>${t.due ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(googleCalendarUrl(t))}">📅</a>` : ''}<button class="btn btn-gold btn-sm" data-agendado="${esc(t.id)}">✓</button></div></div>`).join('')}<h4>Próximos vencimientos</h4>` : ''}
-        ${next.map(t => `<div class="mini-task"><div><b>${esc(t.title)}</b><small>${esc(t.project)} · ${esc(fmtDate(t.due))}${t.time ? ' ' + esc(t.time) : ''}</small></div>
-          <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(googleCalendarUrl(t))}">📅</a></div>`).join('') || '<div class="empty">No hay pendientes con fecha.</div>'}
-        <div class="toolbar" style="margin-top:10px">
-          <button class="btn btn-gold btn-sm" id="agIcs">Exportar todo (.ics)</button>
-          ${!HOST_FRAME && 'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="agNotif">🔔 Activar avisos</button>' : ''}
-        </div>`;
-    }
-    const r = office.results[k];
-    const working = agentStatus(k) === 'trabajando';
-    const q = queueOf(k);
-    const queue = q.length ? `<h4>Bandeja (${q.length})</h4>${q.map(t => `<div class="mini-task"><div><b>${esc(t.title)}</b><small>${esc(t.project)}${t.due ? ' · vence ' + esc(fmtDate(t.due)) : ''}${t.mode === 'revision' ? ' · revisión' : ''}</small></div>
-        <button class="btn btn-gold btn-sm" data-run="${esc(t.id)}" ${!canRun(k) || working ? 'disabled' : ''}>Procesar</button></div>`).join('')}` : '';
-    const needKey = !canRun(k) ? `<div class="notice">${HOST_FRAME ? 'Claude se está conectando a esta página…' : 'Agrega tu clave de Claude en Ajustes para que pueda trabajar.'}</div>` : '';
-    let result = '';
-    if (r) {
-      result = `<h4>Última entrega</h4>` + (r.type === 'image'
-        ? (r.dataUrl ? `<img class="result-img" src="${r.dataUrl}" alt="Pieza generada">` : '<div class="empty">La imagen no se guarda al recargar; vuelve a generarla.</div>')
-        : `<div class="output">${esc(r.text || '')}</div>`) +
-        `<div class="toolbar" style="margin-top:8px">
-          ${r.type === 'image' && r.dataUrl ? '<button class="btn btn-gold btn-sm" id="rDown">⬇️ Descargar PNG</button>' : ''}
-          ${r.type !== 'image' ? '<button class="btn btn-ghost btn-sm" id="rCopy">Copiar</button>' : ''}
-          ${k === 'comunicado' && r.type !== 'image' ? '<button class="btn btn-gold btn-sm" id="rDesign">Pasar a Mateo (diseño)</button>' : ''}
-          <button class="btn btn-ghost btn-sm" id="rApprove">✓ Aprobar</button>
-        </div>`;
-    }
-    return `${needKey}${queue}${result}
-      <details class="manual" ${q.length || r ? '' : 'open'}><summary>Asignar misión manual</summary>
-      <form id="agentForm">${agentForm(k)}
-        <button class="btn btn-primary" id="btnRun" ${working ? 'disabled' : ''}>${working ? 'Trabajando…' : 'Asignar misión'}</button>
-      </form></details>`;
-  }
-
-  function bindChat(k, panel) {
-    const gm = $('#goMail', panel); if (gm) gm.onclick = () => { setView('correo'); if (!gmail.token) connectGmail(); };
-    const ai = $('#agIcs', panel); if (ai) ai.onclick = () => { downloadIcs(tasks.filter(t => t.status !== 'done' && t.due), 'pendientes-alianza.ics'); logEvent('agenda', 'Exportó los pendientes al calendario (.ics)'); renderLog(); };
-    const an = $('#agNotif', panel); if (an) an.onclick = async () => { await Notification.requestPermission(); renderPanel(); };
-    panel.querySelectorAll('[data-agendado]').forEach(b => b.onclick = () => {
-      const t = tasks.find(x => x.id === b.dataset.agendado); t.status = 'done'; t.doneAt = Date.now(); saveTasks();
-      logEvent('agenda', `Agendó «${t.title}»`); refreshOffice(); renderView();
-    });
-    panel.querySelectorAll('[data-run]').forEach(b => b.onclick = () => {
-      const t = tasks.find(x => x.id === b.dataset.run); runMission(k, fdFromTask(t), t);
-    });
-    const form = $('#agentForm', panel); if (!form) return;
-    const r = office.results[k];
-    if (r) {
-      const rc = $('#rCopy', panel); if (rc) rc.onclick = () => navigator.clipboard.writeText(r.text).then(() => toast('Copiado.'));
-      const rd = $('#rDown', panel); if (rd) rd.onclick = () => saveFile(`pieza-${(r.project || 'alianza').replace(/\W+/g, '-').toLowerCase()}.png`, dataUrlToBlob(r.dataUrl));
-      const rs = $('#rDesign', panel); if (rs) rs.onclick = () => {
-        const titulo = (r.text.match(/T[ÍI]TULO:\s*(.+)/i) || [])[1] || '';
-        const texto = ((r.text.match(/MENSAJE:\s*([\s\S]*?)(?:\n\s*FIRMA:|REGISTRO DE TRAZABILIDAD)/i) || [])[1] || r.text).trim();
-        store.set('agent.disenador', { ...store.get('agent.disenador', {}), project: r.project, titulo, texto });
-        logEvent('comunicado', `Te paso el texto para la pieza de ${r.project}`, true, 'disenador'); flyBetween('comunicado', 'disenador');
-        openAgent('disenador');
-      };
-      $('#rApprove', panel).onclick = async () => {
-        const t = tasks.find(x => x.id === r.taskId);
-        await approveItem({ id: r.repoId, taskId: r.taskId, agent: k, title: t ? t.title : AGENTS[k].role });
-        delete office.results[k]; saveResults(); refreshOffice();
-      };
-    }
-    if (k === 'disenador') {
-      const paintLogos = () => {
-        const proj = form.project.value;
-        const own = logos.filter(l => l.project === proj || l.project === 'General / AGI');
-        $('#logoPick', panel).innerHTML = own.length
-          ? own.map(l => `<div class="logo-tile selected" title="${esc(l.project)}"><img src="${l.dataUrl}" alt=""><div>${esc(l.name)}</div></div>`).join('')
-          : '<div class="sub" style="grid-column:1/-1">Sin logos guardados. Pídeselos a Sofía (Archivo) o súbelos aquí.</div>';
-      };
-      form.project.onchange = paintLogos; paintLogos();
-      form.logoFile.onchange = () => {
-        const f = form.logoFile.files[0]; if (!f) return;
-        const rd = new FileReader();
-        rd.onload = async () => { await addLogo({ name: f.name, project: form.project.value, dataUrl: rd.result }); paintLogos(); };
-        rd.readAsDataURL(f);
-      };
-    }
-    form.onsubmit = e => {
-      e.preventDefault();
-      const fd = Object.fromEntries(new FormData(form));
-      delete fd.logoFile; fd.useAI = !!form.useAI?.checked && hasOpenAI();
-      store.set('agent.' + k, fd);
-      runMission(k, fd);
-    };
-  }
-
-  async function runMission(k, fd, task = null) {
-    const a = AGENTS[k];
-    const project = fd.project || task?.project || 'General / AGI';
-    const brief = task ? task.title : (fd.tema || fd.titulo || (fd.idea || fd.peticion || fd.mail || '').slice(0, 50) || a.role);
-    if (!task) {
-      task = { id: uid(), created: Date.now(), title: brief, project, status: 'doing', priority: 'media', due: '', time: '', remind: '', agent: k,
-        notes: `Misión asignada a ${a.name} (${a.role}).`, input: fd.idea || fd.peticion || fd.mail || fd.texto || '', steps: DEFAULT_STEPS[k] };
-      if (k === 'juridico') {
-        task.received = fd.radicado || todayStr(); task.legalDue = addBusinessDays(task.received, 15);
-        task.due = addBusinessDays(task.received, 13); task.remind = '2880'; task.priority = 'alta';
-      }
-      tasks.push(task);
-    }
-    // La misión queda en el tablero: En curso → En revisión (tu aprobación) → Hecho.
-    task.status = 'doing'; saveTasks();
-    office.status[k] = 'trabajando';
-    office.activity[k] = { verb: { comunicado: 'ESCRIBE', correo: 'ESCRIBE', juridico: fd.modo === 'revision' ? 'REVISA' : 'REDACTA', disenador: 'DISEÑA', planificador: 'PLANEA' }[k] || 'TRABAJA', text: brief, t: Date.now() };
-    logEvent(k, `Empiezo «${brief}»`);
+  // Ejecuta un trabajo de un agente: estado, burbuja, registro, repositorio y "Para ti".
+  async function work(k, { verb, text, project, title, fn, saveAs = 'text', taskId = null }) {
+    if (office.status[k]) { toast(`${AGENTS[k].name} ya está trabajando.`); return null; }
+    office.status[k] = 'trabajando'; office.activity[k] = { verb, text, t: Date.now() };
     refreshOffice();
+    let out = null;
     try {
-      const type = k === 'disenador' ? 'image' : 'text';
-      if (type === 'image' && fd.request && !fd.texto && hasClaude()) {
-        office.activity[k] = { verb: 'PIENSA', text: 'el texto de la pieza', t: Date.now() }; refreshOffice();
-        const raw = await askClaude(COMUNICADO_SYSTEM + '\nAhora solo necesito el texto de un flyer. Responde SOLO JSON: {"titulo":"máximo 6 palabras","texto":"2 a 4 líneas cortas, puede usar viñetas •"}', `Proyecto: ${project}\nPedido: ${fd.request}`);
-        try { const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); fd.titulo = j.titulo; fd.texto = j.texto; } catch { fd.titulo = brief; fd.texto = fd.request; }
-        office.activity[k] = { verb: 'DISEÑA', text: fd.titulo, t: Date.now() }; refreshOffice();
+      out = await fn();
+      if (saveAs) {
+        const item = { id: uid(), date: Date.now(), agent: k, project: project || 'General / AGI', type: saveAs, title, content: out, status: 'borrador', taskId };
+        const saved = await repo.put(item).catch(e => { toast('No se guardó en Entregables: ' + (e?.message || e)); return null; });
+        if (saved && !HOST.db) office.pending.unshift({ ...item, ...saved });
+        office.lastRepo = { ...(office.lastRepo || {}), [k]: item.id };
+        logEvent(k, `Listo: «${title}». Espera tu aprobación`, true, 'vos');
+        office.flash[k] = { title, sub: 'Espera tu OK', t: Date.now() };
+        setTimeout(refreshOffice, 9500);
       }
-      if (type === 'image' && !fd.texto) { fd.titulo = fd.titulo || brief; fd.texto = fd.request || ''; }
-      const content = type === 'image' ? await runDesigner(fd) : await runWriter(k, fd);
-      const repoId = uid();
-      await repo.put({ id: repoId, date: Date.now(), agent: k, project, type, title: brief, content, taskId: task.id, status: 'borrador' })
-        .catch(() => toast('No se pudo guardar en el repositorio.'));
-      office.results[k] = type === 'image' ? { type, dataUrl: content, project, taskId: task.id, repoId } : { type, text: content, project, taskId: task.id, repoId };
-      saveResults();
-      if (type === 'text') task.notes = `${task.notes || ''}\n\n${content.slice(0, 2000)}`.trim();
-      task.status = 'review'; task.auto = false; saveTasks();
-      logEvent(k, `Listo: «${brief}». Espera tu aprobación`, true, 'vos');
-      office.flash[k] = { title: brief, sub: 'Espera tu OK', t: Date.now() };
-      setTimeout(() => refreshOffice(), 9500);
-    } catch (err) {
-      task.status = 'todo'; task.auto = false; task.notes = `${task.notes || ''}\n\nNo se completó: ${err.message}`; saveTasks();
-      logEvent(k, `No pudo completar «${brief}»: ${err.message}`, false);
-      toast('⚠️ ' + err.message);
+    } catch (e) {
+      logEvent(k, `No pude terminar «${title}»: ${e?.message || e}`, false, 'vos');
+      toast('⚠️ ' + (e?.message || e));
     }
     delete office.status[k];
     refreshOffice();
-    if (['hoy', 'tablero', 'repo'].includes(ui.view)) renderView();
-    startNext(k);
+    return out;
   }
 
-  views.agencia.after = () => { renderOffice(); renderPanel(); autoScans(); };
+  function resultBox(k, r) {
+    if (!r) return '';
+    return `<h4>Resultado</h4>${r.type === 'image' ? `<img class="result-img" src="${r.content}" alt="Pieza informativa generada">` : `<div class="output">${esc(r.content)}</div>`}
+      <div class="toolbar" style="margin-top:8px">
+        ${r.type === 'image' ? '<button class="btn btn-gold btn-sm" data-r="down">⬇️ Descargar PNG</button>' : '<button class="btn btn-gold btn-sm" data-r="copy">Copiar</button><button class="btn btn-ghost btn-sm" data-r="down">⬇️ .txt</button>'}
+        <button class="btn btn-ghost btn-sm" data-r="ok">✓ Aprobar</button><button class="btn btn-ghost btn-sm" data-r="clear">Limpiar</button>
+      </div>`;
+  }
+  function bindResult(k, panel, r, filename) {
+    panel.querySelectorAll('[data-r]').forEach(b => b.onclick = async () => {
+      const act = b.dataset.r;
+      if (act === 'copy') navigator.clipboard.writeText(r.content).then(() => toast('Copiado.'), () => toast('Selecciona el texto y cópialo.'));
+      if (act === 'down') saveFile(filename + (r.type === 'image' ? '.png' : '.txt'), r.type === 'image' ? dataUrlToBlob(r.content) : r.content);
+      if (act === 'ok') { if (r.repoId) { await approveItem({ id: r.repoId, agent: k, title: r.title }); await loadPending(); refreshOffice(); } b.textContent = '✓ Aprobado'; b.disabled = true; }
+      if (act === 'clear') { office.work[k].result = null; renderPanel(); }
+    });
+  }
 
-  function runWriter(key, fd) {
-    const fecha = new Date().toLocaleDateString('es-CO', { timeZone: TZ });
-    if (key === 'comunicado') {
-      return askClaude(COMUNICADO_SYSTEM, `Fecha: ${fecha}\nNombre del delegado: ${settings.delegate || '(sin definir)'}\nProyecto / conjunto: ${fd.project}\nTema: ${fd.tema}\nIdea general (notas en bruto):\n${fd.idea}`);
+  // ---------------------------------------------------------------- Espacios de trabajo
+  const projSelect = (name, sel, detect = false) => `<select name="${name}">${detect ? '<option value="">Detectar</option>' : ''}${projects.map(p => `<option ${p === sel ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>`;
+  const filesLine = files => files && files.length ? `<ul class="file-list">${files.map((f, i) => `<li>📎 ${esc(f.name)}${f.image ? ' (imagen)' : ` · ${(f.text || '').length.toLocaleString('es-CO')} caracteres`}<button type="button" class="link-btn" data-rmfile="${i}">quitar</button></li>`).join('')}</ul>` : '';
+  async function readFiles(input) {
+    const out = [];
+    for (const f of [...(input.files || [])]) {
+      try { out.push(await extractFile(f)); } catch (e) { toast(`${f.name}: ${e.message}`); }
     }
-    if (key === 'correo') {
-      return askClaude('Eres el asistente de la Coordinación de Proyectos de Alianza Grupo Inmobiliario. Redacta un BORRADOR de respuesta de correo en español de Colombia: cordial, profesional, breve y concreto. Comienza con "Cordial saludo," y termina con "Cordialmente," seguido de la firma del delegado. Incluye una línea "Asunto:" sugerida. No inventes datos: si falta información, déjala entre corchetes.',
-        `Delegado: ${settings.delegate || '[nombre]'}\nProyecto: ${fd.project}\nCorreo recibido:\n${fd.mail}\n\nLo que quiero responder:\n${fd.idea}`);
+    input.value = '';
+    return out;
+  }
+
+  const WORK = {};
+
+  // ---- Valeria: recibe lo que envías al equipo y lo reparte
+  WORK.coordinacion = {
+    html() {
+      const w = office.work.coordinacion;
+      return `<p>Cuéntame qué necesitas y explícame el encargo. Se lo paso a quien corresponde.</p>
+        <form id="wForm">
+          <label>¿Qué necesitas?<textarea name="text" rows="6" placeholder="Ej.: Pieza informativa para Madero sobre el lavado de tanques del jueves de 8 a. m. a 2 p. m.">${esc(w.text || '')}</textarea></label>
+          <label>¿Para quién?<select name="to">
+            <option value="">Que Valeria decida</option>
+            <option value="piezas" ${w.to === 'piezas' ? 'selected' : ''}>Mateo · Pieza informativa</option>
+            <option value="textos" ${w.to === 'textos' ? 'selected' : ''}>Tomás · Revisar un texto</option>
+            <option value="peticiones" ${w.to === 'peticiones' ? 'selected' : ''}>Daniela · Derecho de petición</option>
+          </select></label>
+          <label>Proyecto${projSelect('project', w.project, true)}</label>
+          <label>Adjuntos (opcional: PDF, Word, Excel, texto o imagen)<input type="file" name="files" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,image/*"></label>
+          ${filesLine(w.files)}
+          <button class="btn btn-primary" ${office.status.coordinacion ? 'disabled' : ''}>Enviar al equipo</button>
+        </form>`;
+    },
+    bind(panel) {
+      const w = office.work.coordinacion, f = $('#wForm', panel);
+      const keep = () => { w.text = f.text.value; w.to = f.to.value; w.project = f.project.value; };
+      f.files.onchange = async () => { keep(); w.files = [...(w.files || []), ...(await readFiles(f.files))]; renderPanel(); };
+      panel.querySelectorAll('[data-rmfile]').forEach(b => b.onclick = () => { keep(); w.files.splice(Number(b.dataset.rmfile), 1); renderPanel(); });
+      f.onsubmit = async e => { e.preventDefault(); keep(); if (!w.text.trim() && !(w.files || []).length) return toast('Cuéntame qué necesitas.'); await routeToTeam(); };
     }
-    if (key === 'juridico') {
-      const rad = fd.radicado || todayStr();
-      const sys = `Eres Daniela, asesora jurídica de la Coordinación de Proyectos de Alianza Grupo Inmobiliario, administradora de propiedad horizontal en Colombia. Conoces el artículo 23 de la Constitución, la Ley 1755 de 2015 (derecho de petición: 15 días hábiles en general, 10 para documentos e información, 30 para consultas), la Ley 675 de 2001 (propiedad horizontal) y la Ley 1581 de 2012 (datos personales). Lo que entregas es un BORRADOR para revisión humana, no un concepto jurídico definitivo. No inventes hechos, cifras ni artículos: si falta información, márcala entre [corchetes]. Español de Colombia, tono formal, respetuoso y claro.`;
-      const plazos = `Radicado: ${rad}. Vencimientos calculados en días hábiles: 10 días → ${addBusinessDays(rad, 10)}; 15 días → ${addBusinessDays(rad, 15)}; 30 días → ${addBusinessDays(rad, 30)}.`;
-      if (fd.modo === 'revision') {
-        return askClaude(sys + `\nRevisa el borrador del delegado frente a la petición. Entrega:\n1) VEREDICTO: Listo para enviar / Requiere ajustes / Rehacer.\n2) ¿RESPONDE CADA PUNTO?: lista punto → Sí / No / Parcial.\n3) PLAZO: tipo de petición y fecha límite.\n4) OBSERVACIONES: fondo, forma, tono, datos personales, soportes.\n5) VERSIÓN CORREGIDA completa.`,
-          `${plazos}\nProyecto: ${fd.project}\nDelegado que revisa: ${settings.delegate || '[nombre]'}\n\nPETICIÓN:\n${fd.peticion}\n\nBORRADOR DEL DELEGADO:\n${fd.borrador || '(si no viene aparte, búscalo dentro del texto de la petición)'}`);
+  };
+  function guessAgent(text) {
+    const n = norm(text);
+    if (/derecho de peticion|derechos de peticion|tutela|\bpqr|peticion|queja formal/.test(n)) return 'peticiones';
+    if (/pieza|flyer|afiche|banner|grafic|imagen|post|diseñ|disen/.test(n)) return 'piezas';
+    return 'textos';
+  }
+  async function routeToTeam() {
+    const w = office.work.coordinacion;
+    const text = w.text.trim(), files = w.files || [];
+    let dest = w.to, why = '', project = w.project;
+    if (!dest) {
+      if (hasClaude()) {
+        try {
+          const r = await work('coordinacion', { verb: 'LEE', text: 'tu encargo', title: 'Repartir encargo', saveAs: null, fn: () => askClaude(`Eres Valeria, coordinadora del equipo de Alianza Grupo Inmobiliario (administración de propiedad horizontal). Decide qué agente atiende el encargo: "piezas" (Mateo: piezas informativas/flyers), "textos" (Tomás: revisar redacción, coherencia, cohesión y ortografía de un texto), "peticiones" (Daniela: responder o revisar derechos de petición, tutelas o PQR). Proyectos válidos: ${projects.join(', ')}. Responde SOLO JSON: {"agente":"piezas|textos|peticiones","proyecto":"uno de la lista o General / AGI","motivo":"una frase para explicarle el encargo al agente"}`, text + (files.length ? `\n\nAdjuntos: ${files.map(f => f.name).join(', ')}` : '')) });
+          const j = parseJson(r || '{}'); dest = AGENTS[j.agente] ? j.agente : ''; why = j.motivo || ''; if (!project && projects.includes(j.proyecto)) project = j.proyecto;
+        } catch { }
       }
-      return askClaude(sys + `\nEntrega:\n1) CLASIFICACIÓN: tipo de petición, plazo legal y fecha límite.\n2) PUNTOS SOLICITADOS (lista numerada).\n3) BORRADOR DE RESPUESTA formal: ciudad y fecha, destinatario, referencia, respuesta punto por punto, cierre, firma "Administración – ${fd.project} – Alianza Grupo Inmobiliario".\n4) SOPORTES Y ANEXOS que hay que reunir o verificar.`,
-        `${plazos}\nProyecto: ${fd.project}\n\nPETICIÓN RECIBIDA:\n${fd.peticion}`);
+      dest = dest || guessAgent(text + ' ' + files.map(f => f.name).join(' '));
     }
-    if (fd.taskMode) {
-      return askClaude('Eres Valeria, coordinadora de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (propiedad horizontal, Colombia). Para la gestión indicada entrega un plan breve: 1) Objetivo en una frase. 2) Pasos concretos numerados con responsable sugerido. 3) Documentos o datos que se necesitan. 4) Riesgos o alertas. 5) Si conviene, un mensaje corto para el responsable. Usa viñetas y sé concreta.',
-        `Hoy es ${fecha}. Proyecto: ${fd.project}. Gestión: ${fd.taskTitle}\nDetalle:\n${fd.idea}`);
+    project = project || matchProject(text);
+    logEvent('coordinacion', why || `Te paso: «${text.slice(0, 70)}${text.length > 70 ? '…' : ''}»`, true, dest);
+    setBanner(`Entra: ${text.slice(0, 50)}${text.length > 50 ? '…' : ''} → ${AGENTS[dest].name}`);
+    flyBetween('entrada', 'coordinacion'); setTimeout(() => flyBetween('coordinacion', dest), 700);
+    const texts = files.filter(f => f.text), images = files.filter(f => f.image);
+    if (dest === 'piezas') {
+      Object.assign(office.work.piezas, { project, info: text, refText: texts.map(f => f.text).join('\n\n').slice(0, 6000), refImages: images, taskId: w.taskId || null });
+      office.work.coordinacion = {}; openAgent('piezas', true); runPieza();
+    } else if (dest === 'textos') {
+      Object.assign(office.work.textos, { text: [text, ...texts.map(f => f.text)].filter(Boolean).join('\n\n'), notes: '', taskId: w.taskId || null });
+      office.work.coordinacion = {}; openAgent('textos', true); runTextos();
+    } else {
+      const p = office.work.peticiones;
+      Object.assign(p, { step: 1, analysis: null, answers: {}, result: null, taskId: w.taskId || null });
+      p.form = { ...p.form, project, contexto: text, modo: /revis|borrador|delegad/.test(norm(text)) ? 'revision' : 'responder' };
+      p.docs = texts.map(f => ({ name: f.name, kind: /peticion|derecho|solicitud/.test(norm(f.name)) || !p.docs.length ? 'peticion' : 'soporte', text: anonymize(f.text, p.form.ocultar || '').text }));
+      savePet(); office.work.coordinacion = {}; openAgent('peticiones', true);
+      if (p.docs.some(d => d.kind === 'peticion')) runPetAnalysis();
+      else toast('Daniela necesita el texto del derecho de petición: pégalo o adjúntalo.');
     }
-    const open = tasks.filter(t => t.status !== 'done')
-      .map(t => `- [${t.project}] ${t.title} | prioridad ${t.priority} | ${t.due ? 'vence ' + t.due + (t.time ? ' ' + t.time : '') : 'sin fecha'} | estado ${STATUS[t.status]}`).join('\n');
-    return askClaude('Eres el asistente de planeación de la Coordinación de Proyectos de Alianza Grupo Inmobiliario. Con la lista de pendientes, entrega: 1) Las 3 prioridades del día y por qué. 2) Un plan por bloques horarios (8:00 a 17:00). 3) Pendientes que conviene delegar o reprogramar. 4) Alertas de vencimientos. Sé breve y usa viñetas.',
-      `Hoy es ${fecha}.\nContexto: ${fd.idea || 'ninguno'}\n\nPendientes:\n${open}`);
+  }
+
+  // ---- Mateo: piezas informativas
+  WORK.piezas = {
+    html() {
+      const w = office.work.piezas;
+      const own = logos.filter(l => l.project === (w.project || projects[0]) || l.project === 'General / AGI');
+      return `<p>Pídeme una <b>pieza informativa</b>. Uso siempre los colores y el diseño de Alianza, con los logos originales del proyecto.</p>
+        <form id="wForm">
+          <label>Proyecto${projSelect('project', w.project)}</label>
+          <label>Información de la pieza<textarea name="info" rows="4" placeholder="Ej.: Lavado de tanques el jueves 12 de noviembre de 8:00 a. m. a 2:00 p. m. Almacenar agua.">${esc(w.info || '')}</textarea></label>
+          <label>Título (opcional)<input name="titulo" value="${esc(w.titulo || '')}"></label>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="asIs" style="width:auto;margin:0" ${w.asIs ? 'checked' : ''}> Usar mi texto tal cual (solo diseñar)</label>
+          <details ${w.refText || (w.refImages || []).length ? 'open' : ''}><summary>Referencia (opcional)</summary>
+            <label>Texto de referencia<textarea name="refText" rows="3">${esc(w.refText || '')}</textarea></label>
+            <label>Imagen de referencia<input type="file" name="refImg" accept="image/*" multiple></label>
+            ${(w.refImages || []).length ? `<ul class="file-list">${w.refImages.map((f, i) => `<li>🖼️ ${esc(f.name)}<button type="button" class="link-btn" data-rmimg="${i}">quitar</button></li>`).join('')}</ul>` : ''}
+          </details>
+          <h4>Logos de ${esc(w.project || projects[0])}</h4>
+          <div class="logo-grid">${own.map(l => `<div class="logo-tile selected"><img src="${l.dataUrl}" alt=""><div>${esc(l.name)}</div></div>`).join('') || '<div class="sub" style="grid-column:1/-1">Sin logos guardados para este proyecto. Súbelos una vez y quedan para siempre.</div>'}</div>
+          <label style="margin-top:8px">Subir logo<input type="file" name="logoFile" accept="image/*"></label>
+          <button class="btn btn-primary" ${office.status.piezas ? 'disabled' : ''}>${office.status.piezas ? 'Diseñando…' : 'Diseñar pieza informativa'}</button>
+        </form>${resultBox('piezas', w.result)}`;
+    },
+    bind(panel) {
+      const w = office.work.piezas, f = $('#wForm', panel);
+      const keep = () => { w.project = f.project.value; w.info = f.info.value; w.titulo = f.titulo.value; w.asIs = f.asIs.checked; w.refText = f.refText.value; };
+      f.project.onchange = () => { keep(); renderPanel(); };
+      f.refImg.onchange = async () => { keep(); w.refImages = [...(w.refImages || []), ...(await readFiles(f.refImg)).filter(x => x.image)]; renderPanel(); };
+      panel.querySelectorAll('[data-rmimg]').forEach(b => b.onclick = () => { keep(); w.refImages.splice(Number(b.dataset.rmimg), 1); renderPanel(); });
+      f.logoFile.onchange = () => { const file = f.logoFile.files[0]; if (!file) return; keep(); const rd = new FileReader(); rd.onload = async () => { await addLogo({ name: file.name, project: w.project || projects[0], dataUrl: rd.result }); renderPanel(); }; rd.readAsDataURL(file); };
+      f.onsubmit = e => { e.preventDefault(); keep(); if (!w.info.trim() && !w.titulo.trim()) return toast('Escribe la información de la pieza.'); runPieza(); };
+      bindResult('piezas', panel, w.result, `pieza-${(w.project || 'alianza').replace(/\W+/g, '-').toLowerCase()}`);
+    }
+  };
+  async function runPieza() {
+    const w = office.work.piezas; w.project = w.project || projects[0];
+    const title = `Pieza informativa · ${w.titulo || (w.info || '').split('\n')[0].slice(0, 50)}`;
+    const out = await work('piezas', { verb: 'DISEÑA', text: (w.titulo || w.info || '').slice(0, 60), project: w.project, title, saveAs: 'image', taskId: w.taskId, fn: async () => {
+      let titulo = w.titulo, texto = w.info;
+      if (!w.asIs && hasClaude()) {
+        office.activity.piezas = { verb: 'ESCRIBE', text: 'el texto de la pieza', t: Date.now() }; refreshOffice();
+        const raw = await askClaude(PIEZA_SYSTEM, `Proyecto: ${w.project}\nInformación: ${w.info}\n${w.titulo ? 'Título sugerido: ' + w.titulo + '\n' : ''}${w.refText ? 'Texto de referencia:\n' + w.refText + '\n' : ''}${(w.refImages || []).length ? 'Se adjunta imagen de referencia.' : ''}`, (w.refImages || []).map(x => x.image));
+        const j = parseJson(raw); titulo = j.titulo || titulo; texto = j.texto || texto;
+        office.activity.piezas = { verb: 'DISEÑA', text: titulo, t: Date.now() }; refreshOffice();
+      }
+      return runDesigner({ project: w.project, titulo: titulo || 'Información', texto: texto || '', useAI: false });
+    } });
+    if (out) { w.result = { type: 'image', content: out, title, repoId: office.lastRepo?.piezas }; w.taskId = null; renderPanel(); }
+  }
+
+  // ---- Tomás: textos
+  WORK.textos = {
+    html() {
+      const w = office.work.textos;
+      return `<p>Pega el texto o adjunta el documento. Reviso redacción, coherencia, cohesión y ortografía, y te entrego solo el texto ajustado.</p>
+        <form id="wForm">
+          <label>Texto<textarea name="text" rows="9">${esc(w.text || '')}</textarea></label>
+          <label>Documento (PDF, Word o texto)<input type="file" name="doc" accept=".pdf,.docx,.txt,.md"></label>
+          <label>Indicaciones (opcional)<input name="notes" value="${esc(w.notes || '')}" placeholder="Ej.: más formal, para WhatsApp, más corto"></label>
+          <button class="btn btn-primary" ${office.status.textos ? 'disabled' : ''}>${office.status.textos ? 'Revisando…' : 'Revisar texto'}</button>
+        </form>${resultBox('textos', w.result)}`;
+    },
+    bind(panel) {
+      const w = office.work.textos, f = $('#wForm', panel);
+      const keep = () => { w.text = f.text.value; w.notes = f.notes.value; };
+      f.doc.onchange = async () => { keep(); const r = await readFiles(f.doc); w.text = [w.text, ...r.filter(x => x.text).map(x => x.text)].filter(Boolean).join('\n\n'); renderPanel(); };
+      f.onsubmit = e => { e.preventDefault(); keep(); if (!w.text.trim()) return toast('Pega el texto que quieres revisar.'); runTextos(); };
+      bindResult('textos', panel, w.result, 'texto-ajustado');
+    }
+  };
+  async function runTextos() {
+    const w = office.work.textos;
+    if (!hasClaude()) return toast('Claude aún no está disponible.');
+    const title = `Texto ajustado · ${w.text.trim().split('\n')[0].slice(0, 50)}`;
+    const out = await work('textos', { verb: 'REVISA', text: w.text.trim().slice(0, 60), project: matchProject(w.text), title, taskId: w.taskId, fn: () => askClaude(TEXTOS_SYSTEM, (w.notes ? `Indicaciones: ${w.notes}\n\n` : '') + 'TEXTO:\n' + w.text.slice(0, 60000)) });
+    if (out) { w.result = { type: 'text', content: out.trim(), title, repoId: office.lastRepo?.textos }; w.taskId = null; renderPanel(); }
+  }
+
+  // ---- Daniela: derechos de petición (cargar → preguntas → borrador)
+  WORK.peticiones = {
+    html() {
+      const p = office.work.peticiones, f = p.form || {};
+      const steps = `<ol class="steps"><li class="${p.step === 1 ? 'on' : ''}">Cargar</li><li class="${p.step === 2 ? 'on' : ''}">Mis preguntas</li><li class="${p.step === 3 ? 'on' : ''}">Borrador</li></ol>`;
+      if (p.step === 2 && p.analysis) {
+        const a = p.analysis;
+        return steps + `<div class="pet-sum"><b>${esc(a.tipo || 'Derecho de petición')}</b>${p.form.radicado ? ` · recibido ${esc(fmtDate(p.form.radicado))}` : ''}${a.vence ? ` · <span class="chip ${businessDaysLeft(a.vence) <= 3 ? 'red' : 'gold'}">vence ${esc(fmtDate(a.vence))} (${businessDaysLeft(a.vence)} días hábiles)</span>` : ''}
+          <p>${esc(a.resumen || '')}</p>
+          ${(a.puntos || []).length ? `<h4>Lo que solicita</h4><ol>${a.puntos.map(x => `<li>${esc(x.solicitud || x)}</li>`).join('')}</ol>` : ''}
+          ${(a.vacios || []).length ? `<h4>Información que falta</h4><ul>${a.vacios.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+          <form id="wForm"><h4>Antes de redactar, respóndeme</h4>
+            ${(a.preguntas || []).map((q, i) => `<label>${i + 1}. ${esc(q.pregunta)}${q.motivo ? `<small class="q-why">${esc(q.motivo)}</small>` : ''}<textarea name="q${i}" rows="2" placeholder="Si no lo sabes, déjalo vacío y quedará como [PENDIENTE]">${esc((p.answers || {})['q' + i] || '')}</textarea></label>`).join('') || '<p class="sub">No tengo dudas; puedo generar el borrador.</p>'}
+            <label>¿Algo más que deba tener en cuenta?<textarea name="extra" rows="2">${esc((p.answers || {}).extra || '')}</textarea></label>
+            <div class="toolbar"><button type="button" class="btn btn-ghost" id="petBack">← Volver a los documentos</button><button class="btn btn-primary" ${office.status.peticiones ? 'disabled' : ''}>${office.status.peticiones ? 'Redactando…' : p.form.modo === 'revision' ? 'Revisar el borrador' : 'Generar borrador'}</button></div>
+          </form>`;
+      }
+      if (p.step === 3 && p.result) {
+        return steps + resultBox('peticiones', p.result) + `<div class="toolbar"><button class="btn btn-ghost btn-sm" id="petBack2">← Ajustar respuestas</button><button class="btn btn-ghost btn-sm" id="petNew">Nueva petición</button></div>`;
+      }
+      const docs = p.docs || [];
+      const byKind = kind => docs.map((d, i) => ({ ...d, i })).filter(d => d.kind === kind);
+      const docList = list => list.length ? `<ul class="file-list">${list.map(d => `<li>📎 ${esc(d.name)} · ${(d.text || '').length.toLocaleString('es-CO')} caracteres<button type="button" class="link-btn" data-rmdoc="${d.i}">quitar</button></li>`).join('')}</ul>` : '';
+      const hidden = docs.reduce((n, d) => n + (d.hidden || 0), 0);
+      return steps + `<form id="wForm">
+          <div class="seg seg-sm"><button type="button" class="${f.modo !== 'revision' ? 'active' : ''}" data-modo="responder">Responder petición</button><button type="button" class="${f.modo === 'revision' ? 'active' : ''}" data-modo="revision">Revisar borrador de un delegado</button></div>
+          <div class="row"><label>Proyecto${projSelect('project', f.project)}</label><label>Fecha de recibido<input type="date" name="radicado" value="${esc(f.radicado || '')}"></label></div>
+          <label>Derecho de petición (pégalo o adjúntalo)<textarea name="peticion" rows="4" placeholder="Pega aquí el texto de la petición">${esc(f.peticion || '')}</textarea></label>
+          <input type="file" name="fPet" accept=".pdf,.docx,.txt,.md">${docList(byKind('peticion'))}
+          ${f.modo === 'revision' ? `<label>Borrador del delegado<textarea name="borrador" rows="4">${esc(f.borrador || '')}</textarea></label><input type="file" name="fBor" accept=".pdf,.docx,.txt,.md">${docList(byKind('borrador'))}` : ''}
+          <label>Soportes para validar (presupuestos, actas, circulares, contratos…)<input type="file" name="fSop" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls"></label>${docList(byKind('soporte'))}
+          <label>Contexto (lo que debo saber)<textarea name="contexto" rows="3" placeholder="Ej.: la cuota se calcula con el presupuesto provisional aprobado por la constructora…">${esc(f.contexto || '')}</textarea></label>
+          <label>Qué queremos darle a conocer al propietario<textarea name="accion" rows="2" placeholder="Ej.: explicar cómo se calcula la cuota y que no hay lugar a devolución">${esc(f.accion || '')}</textarea></label>
+          <label>Nombres u otros datos a ocultar (separados por coma)<input name="ocultar" value="${esc(f.ocultar || '')}" placeholder="Ej.: nombres del propietario, del arrendatario…"></label>
+          <div class="notice">🔒 Antes de que yo lo lea, se ocultan correos, teléfonos, documentos de identidad, direcciones y nombres detectados${hidden ? ` (${hidden} datos ocultos hasta ahora)` : ''}. Revisa la vista previa y agrega arriba cualquier nombre que se haya escapado.</div>
+          <details><summary>Ver lo que yo recibo</summary><div class="output small">${esc(petPreview().slice(0, 3000)) || 'Aún no hay documentos.'}</div></details>
+          <button class="btn btn-primary" ${office.status.peticiones ? 'disabled' : ''}>${office.status.peticiones ? 'Analizando…' : 'Analizar y preguntarme'}</button>
+        </form>`;
+    },
+    bind(panel) {
+      const p = office.work.peticiones;
+      const back = $('#petBack', panel); if (back) back.onclick = () => { keepAnswers(); p.step = 1; savePet(); renderPanel(); refreshOffice(); };
+      const back2 = $('#petBack2', panel); if (back2) back2.onclick = () => { p.step = 2; savePet(); renderPanel(); };
+      const nw = $('#petNew', panel); if (nw) nw.onclick = () => { office.work.peticiones = { step: 1, form: { modo: 'responder' }, docs: [] }; savePet(); renderPanel(); refreshOffice(); };
+      if (p.step === 3) return bindResult('peticiones', panel, p.result, 'respuesta-derecho-de-peticion');
+      const f = $('#wForm', panel);
+      function keepAnswers() { if (p.step !== 2 || !f) return; p.answers = Object.fromEntries([...f.querySelectorAll('textarea')].map(t => [t.name, t.value])); savePet(); }
+      if (p.step === 2) { f.onsubmit = e => { e.preventDefault(); keepAnswers(); runPetDraft(); }; return; }
+      const keep = () => { Object.assign(p.form, { project: f.project.value, radicado: f.radicado.value, peticion: f.peticion.value, contexto: f.contexto.value, accion: f.accion.value, ocultar: f.ocultar.value }); if (f.borrador) p.form.borrador = f.borrador.value; savePet(); };
+      panel.querySelectorAll('[data-modo]').forEach(b => b.onclick = () => { keep(); p.form.modo = b.dataset.modo; savePet(); renderPanel(); });
+      const add = (input, kind) => input && (input.onchange = async () => { keep(); const r = await readFiles(input); r.filter(x => x.text).forEach(x => { const an = anonymize(x.text, p.form.ocultar || ''); p.docs.push({ name: x.name, kind, text: an.text, hidden: an.count }); }); savePet(); renderPanel(); });
+      add(f.fPet, 'peticion'); add(f.fBor, 'borrador'); add(f.fSop, 'soporte');
+      panel.querySelectorAll('[data-rmdoc]').forEach(b => b.onclick = () => { keep(); p.docs.splice(Number(b.dataset.rmdoc), 1); savePet(); renderPanel(); });
+      f.ocultar.onchange = () => { keep(); p.docs = p.docs.map(d => { const an = anonymize(d.text, p.form.ocultar || ''); return { ...d, text: an.text, hidden: (d.hidden || 0) + an.count }; }); savePet(); renderPanel(); };
+      f.onsubmit = e => { e.preventDefault(); keep(); if (!p.form.peticion.trim() && !p.docs.some(d => d.kind === 'peticion')) return toast('Pega o adjunta el derecho de petición.'); runPetAnalysis(); };
+    }
+  };
+  function petMaterial() {
+    const p = office.work.peticiones, f = p.form, hide = f.ocultar || '';
+    const pet = [anonymize(f.peticion || '', hide).text, ...p.docs.filter(d => d.kind === 'peticion').map(d => d.text)].filter(x => x.trim()).join('\n\n').slice(0, 25000);
+    const bor = [anonymize(f.borrador || '', hide).text, ...p.docs.filter(d => d.kind === 'borrador').map(d => d.text)].filter(x => x.trim()).join('\n\n').slice(0, 20000);
+    let budget = 45000;
+    const sop = p.docs.filter(d => d.kind === 'soporte').map(d => { const t = d.text.slice(0, Math.min(15000, budget)); budget -= t.length; return t ? `### Soporte: ${d.name}\n${t}` : ''; }).filter(Boolean).join('\n\n');
+    return { pet, bor, sop, ctx: anonymize(f.contexto || '', hide).text, acc: anonymize(f.accion || '', hide).text };
+  }
+  function petPreview() { const m = petMaterial(); return [m.pet && 'PETICIÓN:\n' + m.pet, m.bor && 'BORRADOR DEL DELEGADO:\n' + m.bor, m.sop].filter(Boolean).join('\n\n'); }
+  async function runPetAnalysis() {
+    const p = office.work.peticiones, m = petMaterial();
+    if (!hasClaude()) return toast('Claude aún no está disponible.');
+    const out = await work('peticiones', { verb: 'ANALIZA', text: 'la petición y los soportes', project: p.form.project, title: 'Análisis de petición', saveAs: null, fn: () => askClaude(PET_ROLE + `
+TAREA AHORA: analiza el material y, ANTES de redactar, prepara tus preguntas para la coordinadora. ${p.form.modo === 'revision' ? 'Vas a revisar el borrador de un delegado frente a la petición.' : 'Vas a responder la petición.'}
+Pregunta solo lo necesario para responder de fondo cada punto sin inventar (cifras, fechas, decisiones, soportes, postura de la Administración). Máximo 8 preguntas, concretas.
+Responde SOLO JSON: {"tipo":"Derecho de petición|Tutela|PQR|Queja|Requerimiento","plazoDias":10|15|30|null,"resumen":"2 o 3 frases","puntos":[{"solicitud":"lo que pide, en una frase"}],"vacios":["información que no está en los documentos"],"preguntas":[{"pregunta":"...","motivo":"por qué la necesito"}]}`,
+      `Fecha de recibido: ${p.form.radicado || 'sin dato'}\nProyecto: ${p.form.project || 'sin dato'}\nContexto de la coordinadora: ${m.ctx || 'ninguno'}\nQué queremos dar a conocer: ${m.acc || 'sin dato'}\n\nPETICIÓN:\n${m.pet}\n\n${m.bor ? 'BORRADOR DEL DELEGADO:\n' + m.bor + '\n\n' : ''}${m.sop ? 'SOPORTES:\n' + m.sop : ''}`) });
+    if (!out) return;
+    try {
+      const a = parseJson(out);
+      if (a.plazoDias && p.form.radicado) a.vence = addBusinessDays(p.form.radicado, Number(a.plazoDias));
+      p.analysis = a; p.answers = {}; p.step = 2; savePet();
+      logEvent('peticiones', `Tengo ${(a.preguntas || []).length} preguntas antes de redactar`, true, 'vos');
+    } catch { toast('No pude leer el análisis; intenta de nuevo.'); }
+    renderPanel(); refreshOffice();
+  }
+  async function runPetDraft() {
+    const p = office.work.peticiones, m = petMaterial(), a = p.analysis || {};
+    const qa = (a.preguntas || []).map((q, i) => `P: ${q.pregunta}\nR: ${(p.answers['q' + i] || '').trim() || '[sin respuesta: marcar como PENDIENTE]'}`).join('\n\n');
+    const refs = office.refs.slice(0, 2).map((r, i) => `### Respuesta modelo ${i + 1} (solo como guía de ESTRUCTURA y estilo; no uses su información)\n${r.text.slice(0, 6000)}`).join('\n\n');
+    const revision = p.form.modo === 'revision';
+    const task = revision ? `TAREA: revisa el borrador del delegado frente a la petición y entrega:
+1) VEREDICTO: Listo para enviar / Requiere ajustes / Rehacer.
+2) ¿RESPONDE CADA PUNTO?: lista "punto → Sí / No / Parcial" con una frase.
+3) OBSERVACIONES: fondo, forma, tono, datos personales, cifras sin soporte, plazos.
+4) VERSIÓN CORREGIDA completa siguiendo la estructura.` : `TAREA: redacta el BORRADOR de respuesta siguiendo la estructura. Responde de fondo cada punto, en el mismo orden de la petición. Al final, después de una línea "---", agrega "PENDIENTES POR VALIDAR:" con la lista de vacíos que quedaron marcados (si no hay, escribe "Ninguno").`;
+    const title = `${revision ? 'Revisión' : 'Respuesta'} · ${(a.resumen || p.form.contexto || 'derecho de petición').slice(0, 60)}`;
+    const out = await work('peticiones', { verb: revision ? 'REVISA' : 'REDACTA', text: revision ? 'el borrador del delegado' : 'la respuesta', project: p.form.project, title, taskId: p.taskId, fn: () => askClaude(PET_ROLE + '\n\n' + PET_STRUCT + '\n\n' + task + '\nResponde solo con el documento, en texto plano.',
+      `Fecha de recibido: ${p.form.radicado || '[PENDIENTE]'}\nProyecto / conjunto: ${p.form.project || '[PENDIENTE]'}\nTipo: ${a.tipo || ''}\nContexto de la coordinadora: ${m.ctx || 'ninguno'}\nQué queremos dar a conocer: ${m.acc || 'sin dato'}\n\nRESPUESTAS DE LA COORDINADORA A TUS PREGUNTAS:\n${qa || 'Sin preguntas.'}\n${(p.answers.extra || '').trim() ? '\nIndicaciones adicionales: ' + p.answers.extra : ''}\n\nPETICIÓN:\n${m.pet}\n\n${m.bor ? 'BORRADOR DEL DELEGADO:\n' + m.bor + '\n\n' : ''}${m.sop ? 'SOPORTES:\n' + m.sop + '\n\n' : ''}${refs}`) });
+    if (out) { p.result = { type: 'text', content: out.trim(), title, repoId: office.lastRepo?.peticiones }; p.step = 3; p.taskId = null; savePet(); renderPanel(); refreshOffice(); }
+  }
+  // Respuestas modelo (solo estructura), anonimizadas
+  function refsHtml() {
+    return `<h4>Respuestas modelo (solo estructura)</h4>
+      <p class="sub">Súbeme hasta 3 respuestas que te gusten. Tomo su estructura y estilo, nunca su información. Se guardan sin datos personales.</p>
+      ${office.refs.length ? `<ul class="file-list">${office.refs.map((r, i) => `<li>📄 ${esc(r.name)}<button type="button" class="link-btn" data-rmref="${i}">quitar</button></li>`).join('')}</ul>` : '<p class="sub">Mientras tanto uso la estructura de las respuestas que ya me compartiste.</p>'}
+      <input type="file" id="refFile" accept=".pdf,.docx,.txt" multiple>`;
+  }
+  function saveRefs() { store.set('office.refs', office.refs); if (HOST.db) HOST.db.doc('meta/referencias').set({ items: JSON.parse(JSON.stringify(office.refs)) }).catch(dbFail); }
+  function bindRefs(panel) {
+    const inp = $('#refFile', panel);
+    if (inp) inp.onchange = async () => { const r = await readFiles(inp); r.filter(x => x.text).forEach(x => office.refs.push({ name: x.name, text: anonymize(x.text).text.slice(0, 8000) })); office.refs = office.refs.slice(-3); saveRefs(); renderPanel(); toast('Respuesta modelo guardada.'); };
+    panel.querySelectorAll('[data-rmref]').forEach(b => b.onclick = () => { office.refs.splice(Number(b.dataset.rmref), 1); saveRefs(); renderPanel(); });
+  }
+
+  // ---- Sofía: resumen de la bandeja y búsqueda de correos
+  WORK.bandeja = {
+    html() {
+      const ib = office.inbox, w = office.work.bandeja;
+      const list = (arr, fn) => arr && arr.length ? `<ul class="ib-list">${arr.map(fn).join('')}</ul>` : '';
+      const link = x => x.url ? ` <a target="_blank" rel="noopener" href="${esc(x.url)}">Abrir</a>` : '';
+      return `<form id="findForm" class="find-mini"><input name="q" value="${esc(w.query || '')}" placeholder="Busca un correo: quién lo envió, tema, fecha aproximada…" aria-label="Buscar un correo"><button class="btn btn-primary btn-sm" ${office.status.bandeja ? 'disabled' : ''}>Buscar</button></form>
+        ${w.found ? `<div class="found">${w.found.length ? w.found.map(r => `<div class="found-row"><b>${esc(r.subject)}</b><small>${esc(r.from)} · ${esc(r.date)}</small><div class="toolbar"><button class="btn btn-ghost btn-sm" data-copy="${esc(r.subject)}">Copiar asunto</button>${r.url ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(r.url)}">Abrir en Gmail</a>` : ''}</div></div>`).join('') : '<p class="sub">No encontré correos con esa descripción. Prueba con otra palabra o un remitente.</p>'}</div>` : ''}
+        <div class="toolbar" style="margin-top:12px"><button class="btn btn-gold btn-sm" id="ibNow" ${office.status.bandeja ? 'disabled' : ''}>${office.status.bandeja ? 'Leyendo…' : ib ? 'Actualizar resumen' : 'Resumir mis no leídos'}</button>${ib ? `<span class="sub" style="margin:0">${ib.total || 0} sin leer · ${esc(ago(ib.at))}</span>` : ''}<button class="btn btn-ghost btn-sm" id="goFolders">Ver carpetas</button></div>
+        ${ib ? `<p class="ib-sum">${esc(ib.resumen || '')}</p>
+          ${(ib.grupos || []).length ? `<div class="ib-chips">${ib.grupos.map(g => `<span class="chip">${esc(g.tema)} · <b>${g.cantidad}</b></span>`).join('')}</div>` : ''}
+          ${(ib.derechos || []).length ? `<h4>Derechos de petición (${ib.derechos.length})</h4>${list(ib.derechos, d => `<li><b>${esc(d.asunto)}</b><small>${esc(d.proyecto || '')} · recibido ${esc(fmtDate(d.fecha))}${d.vence ? ` · <span class="${businessDaysLeft(d.vence) <= 3 ? 'red-t' : ''}">vence ${esc(fmtDate(d.vence))}</span>` : ''}</small>${link(d)}</li>`)}` : ''}
+          ${(ib.citaciones || []).length ? `<h4>Citaciones y reuniones</h4>${list(ib.citaciones, (c, i) => `<li><b>${esc(c.asunto)}</b><small>${c.fecha ? esc(fmtDate(c.fecha)) : 'sin fecha'}${c.hora ? ' · ' + esc(c.hora) : ''}</small>${link(c)} <button type="button" class="link-btn" data-cit="${i}">+ Tarea</button></li>`)}` : ''}
+          ${(ib.pendientes || []).length ? `<h4>Pendientes</h4>${list(ib.pendientes, x => `<li><b>${esc(x.asunto)}</b><small>${esc(x.accion || '')}</small>${link(x)}</li>`)}` : ''}` : '<p class="sub">Leo tus correos no leídos (solo lectura) y te digo cuántos derechos de petición hay, sus fechas, las citaciones y lo pendiente.</p>'}`;
+    },
+    bind(panel) {
+      const f = $('#findForm', panel); f.onsubmit = e => { e.preventDefault(); const q = f.q.value.trim(); if (q) findEmail(q); };
+      $('#ibNow', panel).onclick = () => runInboxSummary();
+      $('#goFolders', panel).onclick = () => { setView('correo'); if (!gmail.token) connectGmail(); };
+      panel.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => toast('Asunto copiado.'), () => toast('Selecciona el asunto y cópialo.')));
+      panel.querySelectorAll('[data-cit]').forEach(b => b.onclick = () => {
+        const c = office.inbox.citaciones[Number(b.dataset.cit)];
+        tasks.push({ id: uid(), created: Date.now(), status: 'todo', title: c.asunto, project: matchProject(c.asunto + ' ' + (c.proyecto || '')), priority: 'media', due: c.fecha || '', time: c.hora || '', remind: c.fecha ? '1440' : '', notes: c.url ? 'Correo: ' + c.url : '' });
+        saveTasks(); b.textContent = '✓ En Tareas'; b.disabled = true;
+      });
+    }
+  };
+  function threadRows(threads) {
+    return threads.map(th => {
+      const ms = th.messages || [], last = ms[ms.length - 1] || {}, first = ms[0] || {};
+      const nm = m => ((m.addressDisplayNames || []).find(x => x.emailAddress === m.sender) || {}).displayName || m.sender || '';
+      return { id: th.id, subject: last.subject || first.subject || '(sin asunto)', from: nm(last), date: last.date ? new Date(last.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ }) : '', day: ymd(last.date), snippet: decodeEntities(last.snippet || '').slice(0, 200), url: th.viewUrl || last.viewUrl || '' };
+    });
+  }
+  async function runInboxSummary() {
+    if (!HOST.mcp) return toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'El resumen de la bandeja funciona en la versión publicada en claude.ai.');
+    if (!hasClaude()) return toast('Claude aún no está disponible.');
+    await work('bandeja', { verb: 'LEE', text: 'tus correos no leídos', title: 'Resumen de la bandeja', saveAs: null, fn: async () => {
+      let threads = [], pageToken;
+      for (let i = 0; i < 2; i++) {
+        const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query: 'is:unread in:inbox', pageSize: 50, view: 'THREAD_VIEW_SUMMARY', ...(pageToken ? { pageToken } : {}) });
+        threads = threads.concat((r.payload && r.payload.threads) || []); pageToken = r.payload && r.payload.nextPageToken; if (!pageToken) break;
+      }
+      const rows = threadRows(threads);
+      if (!rows.length) { office.inbox = { at: Date.now(), total: 0, resumen: 'No tienes correos sin leer en la bandeja de entrada.', grupos: [], derechos: [], citaciones: [], pendientes: [] }; return ''; }
+      const raw = await askClaude(`Eres Sofía, de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (administración de propiedad horizontal en Colombia). Recibes los correos NO LEÍDOS de la bandeja (asunto, remitente, fecha y fragmento). Hoy es ${todayStr()}. Proyectos: ${projects.join(', ')}.
+Haz un resumen breve para la coordinadora. Responde SOLO JSON:
+{"resumen":"2 a 4 frases: cuántos correos, qué temas predominan y qué es lo más urgente","grupos":[{"tema":"Derechos de petición|Citaciones y reuniones|Pendientes de respuesta|Informes y contabilidad|Obras y mantenimiento|Informativos|Otros","cantidad":n}],"derechos":[{"id":"id del hilo","asunto":"...","fecha":"YYYY-MM-DD (fecha del correo)","proyecto":"..."}],"citaciones":[{"id":"...","asunto":"...","fecha":"YYYY-MM-DD del evento o null","hora":"HH:MM o null"}],"pendientes":[{"id":"...","asunto":"...","accion":"qué hay que hacer, una frase"}]}
+Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes", máximo 8, los que requieren acción de la coordinadora. No inventes datos.`, JSON.stringify(rows.map(({ url, day, ...x }) => x)));
+      const j = parseJson(raw), byId = Object.fromEntries(rows.map(r => [r.id, r]));
+      const withUrl = arr => (arr || []).filter(x => byId[x.id]).map(x => ({ ...x, url: byId[x.id].url }));
+      const derechos = withUrl(j.derechos).map(d => ({ ...d, fecha: d.fecha || byId[d.id].day, vence: addBusinessDays(d.fecha || byId[d.id].day, 15) }));
+      office.inbox = { at: Date.now(), total: rows.length, resumen: j.resumen || '', grupos: j.grupos || [], derechos, citaciones: withUrl(j.citaciones), pendientes: withUrl(j.pendientes) };
+      return '';
+    } });
+    if (office.inbox) {
+      store.set('office.inbox', office.inbox); store.set('scanOk', true);
+      if (HOST.db) HOST.db.doc('scans/bandeja').set(JSON.parse(JSON.stringify(office.inbox))).catch(dbFail);
+      office.flash.bandeja = { title: `${office.inbox.total} sin leer`, sub: `${(office.inbox.derechos || []).length} derechos de petición`, t: Date.now() };
+    }
+    refreshOffice(); if (office.open === 'bandeja') renderPanel();
+  }
+  async function findEmail(q) {
+    if (!HOST.mcp) return toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'La búsqueda de correos funciona en la versión publicada en claude.ai.');
+    const w = office.work.bandeja; w.query = q; w.found = null;
+    await work('bandeja', { verb: 'BUSCA', text: q.slice(0, 50), title: 'Buscar correo', saveAs: null, fn: async () => {
+      let queries = [q];
+      if (hasClaude()) {
+        try { const j = parseJson(await askClaude(`Convierte la descripción de un correo en búsquedas de Gmail. Hoy es ${todayStr()}. Usa operadores (from:, subject:, after:YYYY/MM/DD, before:, has:attachment) solo si la descripción los sugiere; prefiere palabras clave sin comillas. Responde SOLO JSON: {"queries":["búsqueda precisa","búsqueda más amplia","búsqueda aún más amplia"]}`, q)); if (Array.isArray(j.queries) && j.queries.length) queries = j.queries.slice(0, 3); } catch { }
+      }
+      for (const query of queries) {
+        const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query, pageSize: 8, view: 'THREAD_VIEW_SUMMARY' });
+        const rows = threadRows((r.payload && r.payload.threads) || []);
+        if (rows.length) { w.found = rows; return ''; }
+      }
+      w.found = []; return '';
+    } });
+    if (office.open === 'bandeja') renderPanel();
+  }
+  function autoInbox() {
+    if (office.autoRunning || !HOST.mcp || !hasClaude() || !store.get('scanOk', false)) return;
+    if (office.inbox && Date.now() - office.inbox.at < 2 * 3600e3) return;
+    office.autoRunning = true; runInboxSummary().finally(() => { office.autoRunning = false; });
+  }
+
+  views.agencia.after = () => { loadPending().then(() => { renderOffice(); renderPanel(); }); renderOffice(); renderPanel(); autoInbox(); };
+
+  // ---------------------------------------------------------------- Tareas (tus pendientes; nadie trabaja solo aquí)
+  const MESES = { ene: 1, enero: 1, feb: 2, febrero: 2, mar: 3, marzo: 3, abr: 4, abril: 4, may: 5, mayo: 5, jun: 6, junio: 6, jul: 7, julio: 7, ago: 8, agosto: 8, sep: 9, sept: 9, septiembre: 9, oct: 10, octubre: 10, nov: 11, noviembre: 11, dic: 12, diciembre: 12 };
+  const DIAS = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6 };
+  // Lee fecha y hora escritas en la tarea ("mañana a las 3 pm", "viernes", "15 de nov", "15/11").
+  function parseWhen(text) {
+    const n = norm(text), today = todayStr();
+    let due = '', time = '';
+    if (/\bpasado manana\b/.test(n)) due = addDays(today, 2);
+    else if (/\bmanana\b/.test(n)) due = addDays(today, 1);
+    else if (/\bhoy\b/.test(n)) due = today;
+    let m = n.match(/\b(\d{1,2})\s*(?:de\s+)?(ene(?:ro)?|feb(?:rero)?|mar(?:zo)?|abr(?:il)?|may(?:o)?|jun(?:io)?|jul(?:io)?|ago(?:sto)?|sept?(?:iembre)?|oct(?:ubre)?|nov(?:iembre)?|dic(?:iembre)?)\b/);
+    if (!due && m) { const y = Number(today.slice(0, 4)); let d = `${y}-${String(MESES[m[2]]).padStart(2, '0')}-${m[1].padStart(2, '0')}`; if (d < today) d = `${y + 1}${d.slice(4)}`; due = d; }
+    m = n.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+    if (!due && m) { const y = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : Number(today.slice(0, 4)); due = `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+    m = n.match(/\b(?:el\s+|este\s+|proximo\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/);
+    if (!due && m) { const d = new Date(today + 'T12:00:00'); let add = (DIAS[m[1]] - d.getDay() + 7) % 7; if (add === 0) add = 7; due = addDays(today, add); }
+    m = n.match(/\b(?:a\s+las?\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?\s?m\.?|p\.?\s?m\.?|am|pm)\b/) || n.match(/\ba\s+las?\s+(\d{1,2})(?::(\d{2}))?\b/) || n.match(/\b(\d{1,2}):(\d{2})\b/);
+    if (m) { let h = Number(m[1]); const mi = m[2] || '00'; const ap = (m[3] || '').replace(/[\s.]/g, ''); if (ap === 'pm' && h < 12) h += 12; if (ap === 'am' && h === 12) h = 0; if (!ap && h < 7) h += 12; if (h < 24) time = `${String(h).padStart(2, '0')}:${mi}`; }
+    return { due, time };
+  }
+
+  ui.tareas = { mode: 'lista', project: '', q: '', showDone: false };
+  views.tareas = () => {
+    const today = todayStr(), week = addDays(today, 7), t = ui.tareas;
+    const q = norm(t.q);
+    const mine = tasks.filter(x => (!t.project || x.project === t.project) && (!q || norm(x.title + ' ' + (x.notes || '')).includes(q)));
+    const open = mine.filter(x => x.status !== 'done');
+    const sortD = (a, b) => ((a.due || '9') + (a.time || '')).localeCompare((b.due || '9') + (b.time || ''));
+    const sec = (title, list, cls = '') => list.length ? `<h2 class="${cls}">${title} <span class="count">${list.length}</span></h2>${list.sort(sortD).map(taskRow).join('')}` : '';
+    let body;
+    if (t.mode === 'tablero') {
+      const cols = [['todo', 'Por hacer'], ['doing', 'En curso'], ['done', 'Hecho']];
+      body = `<div class="board three">${cols.map(([k, l]) => { const items = mine.filter(x => (k === 'todo' ? ['todo', 'review'].includes(x.status) : x.status === k)); return `<div class="column" data-status="${k}"><h3>${l}<span>${items.length}</span></h3>${items.sort(sortD).map(taskRow).join('')}</div>`; }).join('')}</div>`;
+    } else {
+      body = (sec('⚠️ Vencidas', open.filter(x => x.due && x.due < today), 'red-t') + sec('Hoy', open.filter(x => x.due === today)) +
+        sec('Próximos 7 días', open.filter(x => x.due > today && x.due <= week)) + sec('Más adelante', open.filter(x => x.due > week)) +
+        sec('Sin fecha', open.filter(x => !x.due))) || '<div class="empty">No tienes tareas pendientes. Escribe arriba la primera.</div>';
+      const done = mine.filter(x => x.status === 'done').sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+      if (done.length) body += `<button class="btn btn-ghost btn-sm" id="tgDone" style="margin-top:12px">${t.showDone ? 'Ocultar' : 'Ver'} hechas (${done.length})</button>${t.showDone ? done.slice(0, 40).map(taskRow).join('') : ''}`;
+    }
+    return `<h1>Tareas</h1>
+      <p class="sub">Lo que vas recordando, con fecha y aviso. Aquí ningún agente trabaja solo: si necesitas ayuda, usa «Enviar al equipo» en la tarea.</p>
+      <form id="quickTask" class="quick">
+        <div class="cmd-main"><span class="cmd-ico">＋</span><textarea name="text" rows="1" placeholder="Escribe una tarea… (ej.: llamar a la constructora el viernes a las 10 am)" aria-label="Nueva tarea"></textarea><button class="btn btn-gold">Agregar</button></div>
+        <div class="quick-fields">
+          <label>Proyecto<select name="project"><option value="">Detectar</option>${projects.map(p => `<option>${esc(p)}</option>`).join('')}</select></label>
+          <label>Fecha<input type="date" name="due"></label>
+          <label>Hora<input type="time" name="time"></label>
+          <label>Aviso<select name="remind"><option value="auto">Automático</option><option value="">Sin aviso</option><option value="0">A la hora</option><option value="30">30 min antes</option><option value="120">2 horas antes</option><option value="1440">1 día antes</option></select></label>
+          <label>Prioridad<select name="priority"><option value="media">Media</option><option value="alta">Alta</option><option value="baja">Baja</option></select></label>
+        </div>
+      </form>
+      <div class="toolbar tareas-bar">
+        <div class="seg seg-sm"><button class="${t.mode === 'lista' ? 'active' : ''}" data-mode="lista">Lista</button><button class="${t.mode === 'tablero' ? 'active' : ''}" data-mode="tablero">Tablero</button></div>
+        <select id="tProject"><option value="">Todos los proyectos</option>${projects.map(p => `<option ${p === t.project ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+        <input id="tQ" placeholder="Buscar…" value="${esc(t.q)}">
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm" id="btnIcsAll">📅 Exportar al calendario</button>
+        ${!HOST_FRAME && 'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="btnNotif">🔔 Activar avisos</button>' : ''}
+      </div>
+      ${body}`;
+  };
+  views.tareas.after = root => {
+    bindTaskEvents(root);
+    const f = $('#quickTask', root), ta = f.text;
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'; };
+    ta.oninput = () => { grow(); const w = parseWhen(ta.value); if (w.due && !f.due.dataset.touched) f.due.value = w.due; if (w.time && !f.time.dataset.touched) f.time.value = w.time; };
+    f.due.oninput = () => f.due.dataset.touched = '1'; f.time.oninput = () => f.time.dataset.touched = '1';
+    ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } };
+    f.onsubmit = e => {
+      e.preventDefault();
+      const text = ta.value.trim(); if (!text) return ta.focus();
+      const w = parseWhen(text), due = f.due.value || w.due, time = f.time.value || w.time;
+      const remind = f.remind.value === 'auto' ? (due ? (time ? '30' : '0') : '') : f.remind.value;
+      tasks.push({ id: uid(), created: Date.now(), status: 'todo', title: text.split('\n')[0].slice(0, 160), notes: text.includes('\n') ? text : '', project: f.project.value || matchProject(text), priority: f.priority.value, due, time, remind });
+      saveTasks(); toast(due ? `Tarea guardada para ${fmtDate(due)}${time ? ' a las ' + time : ''}${remind !== '' ? ' con aviso' : ''}.` : 'Tarea guardada.');
+      renderView(); setTimeout(() => { const t2 = $('#quickTask textarea'); if (t2) t2.focus(); }, 0);
+    };
+    root.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { ui.tareas.mode = b.dataset.mode; renderView(); });
+    $('#tProject', root).onchange = e => { ui.tareas.project = e.target.value; renderView(); };
+    const q = $('#tQ', root); q.oninput = e => { ui.tareas.q = e.target.value; renderView(); const n = $('#tQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    const td = $('#tgDone', root); if (td) td.onclick = () => { ui.tareas.showDone = !ui.tareas.showDone; renderView(); };
+    $('#btnIcsAll', root).onclick = () => { const list = tasks.filter(x => x.status !== 'done' && x.due); if (!list.length) return toast('No hay tareas con fecha.'); downloadIcs(list, 'tareas-alianza.ics'); };
+    const bn = $('#btnNotif', root); if (bn) bn.onclick = async () => { await Notification.requestPermission(); renderView(); };
+    root.querySelectorAll('.task').forEach(el => el.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', el.dataset.id)));
+    root.querySelectorAll('.column').forEach(col => {
+      col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
+      col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+      col.addEventListener('drop', e => { e.preventDefault(); const x = tasks.find(y => y.id === e.dataTransfer.getData('text/plain')); if (x) { x.status = col.dataset.status; if (x.status === 'done') x.doneAt = Date.now(); saveTasks(); renderView(); } });
+    });
+    root.querySelectorAll('[data-team]').forEach(b => b.onclick = e => { e.stopPropagation(); sendTaskToTeam(b.dataset.team); });
+  };
+  function sendTaskToTeam(id) {
+    const t = tasks.find(x => x.id === id); if (!t) return;
+    office.work.coordinacion = { text: `${t.title}${t.notes ? '\n' + t.notes : ''}\n\n`, project: t.project, taskId: t.id };
+    if (t.status === 'todo') { t.status = 'doing'; saveTasks(); }
+    setView('agencia'); openAgent('coordinacion', true);
+    setTimeout(() => { const ta = $('#panel textarea'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 50);
+    toast('Explícale a Valeria qué necesitas y envíalo.');
   }
 
   // Compone la pieza: fondo (IA o plantilla) + logos originales sin alterar + textos.
@@ -1502,170 +1598,7 @@ Responde SOLO JSON: {"items":[{"id":"id del hilo","titulo":"nombre corto del eve
   }
   function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
-  // ---------------------------------------------------------------- Despacho: barra principal → agente
-  const AI_AGENTS = ['comunicado', 'correo', 'juridico', 'planificador', 'disenador'];
-  const DEFAULT_STEPS = {
-    comunicado: ['Confirmar datos clave (fecha, hora, lugar)', 'Tomás redacta el comunicado', 'Revisar y aprobar el texto', 'Pasar a Mateo si requiere pieza gráfica', 'Publicar en el canal de WhatsApp del conjunto'],
-    correo: ['Leer el correo completo y anexos', 'Lucía prepara el borrador de respuesta', 'Completar los datos entre [corchetes]', 'Aprobar y enviar desde tu Gmail'],
-    juridico: ['Verificar fecha de radicación y plazo legal', 'Reunir soportes (actas, contratos, estados de cuenta)', 'Daniela redacta o revisa el borrador', 'Revisión de jefatura antes de firmar', 'Enviar y archivar la constancia de envío'],
-    disenador: ['Confirmar texto aprobado', 'Verificar logos originales del proyecto', 'Mateo diseña la pieza', 'Aprobar y publicar'],
-    agenda: ['Confirmar fecha, hora y asistentes', 'Agregar al calendario', 'Preparar la información previa'],
-    planificador: ['Definir el responsable', 'Fijar fecha de entrega', 'Hacer seguimiento']
-  };
-  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-
-  function heuristicClassify(text) {
-    const n = norm(text);
-    let agente = 'planificador', modo = null, plazoDias = null;
-    if (/derecho de peticion|derechos de peticion|tutela|\bpqr|queja formal|peticion/.test(n)) {
-      agente = 'juridico';
-      modo = /revis|borrador (del|de la|de) delegad|delegad[oa] envi|proyect(o|ó) de respuesta/.test(n) ? 'revision' : 'borrador';
-      plazoDias = /copia|documento|informacion/.test(n) ? 10 : /consulta/.test(n) ? 30 : 15;
-    } else if (/comunicad|circular|aviso a la comunidad|whatsapp|informar a (los )?residentes/.test(n)) agente = 'comunicado';
-    else if (/pieza|flyer|afiche|banner|diseñ|disen|grafic|imagen|post /.test(n)) agente = 'disenador';
-    else if (/reunion|visita|comite|asamblea|agenda|recordar|recordatorio|cita\b|meet/.test(n)) agente = 'agenda';
-    else if (/responder|dar respuesta|contestar|asunto:|^de: |^from: /m.test(n)) agente = 'correo';
-    const first = String(text).split('\n').map(s => s.trim()).find(Boolean) || 'Pendiente';
-    const subj = (String(text).match(/asunto:\s*(.+)/i) || [])[1];
-    return {
-      titulo: (subj || first).replace(/^[-*•\d.)\s]+/, '').slice(0, 90),
-      agente, modo, plazoDias, proyecto: matchProject(text),
-      prioridad: agente === 'juridico' || /urgente|prioridad|hoy|inmediato/.test(n) ? 'alta' : 'media',
-      vence: null, hora: null, pasos: DEFAULT_STEPS[agente], resumen: ''
-    };
-  }
-
-  async function claudeClassify(text) {
-    const sys = `Eres Valeria, coordinadora del equipo de agentes de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (administración de propiedad horizontal en Colombia). Recibes pendientes en bruto (notas, listas o correos pegados) y los asignas.
-Agentes: "comunicado" (Tomás: comunicados y circulares para la comunidad), "correo" (Lucía: responder correos), "juridico" (Daniela: derechos de petición, tutelas, PQR formales; redacta la respuesta o revisa el borrador que envió un delegado), "disenador" (Mateo: piezas gráficas), "agenda" (Andrés: reuniones, visitas, citas y recordatorios), "planificador" (Valeria: gestiones generales del coordinador).
-Proyectos válidos: ${projects.join(', ')}.
-Si el texto trae varios pendientes distintos, sepáralos. Responde SOLO con JSON válido, sin texto adicional:
-{"actividades":[{"titulo":"máx 80 caracteres, empieza con verbo","agente":"clave","proyecto":"uno de la lista o General / AGI","prioridad":"alta|media|baja","vence":"YYYY-MM-DD o null","hora":"HH:MM o null","modo":"borrador|revision|null (solo jurídico)","plazoDias":"10|15|30|null (solo jurídico, Ley 1755 de 2015)","radicado":"YYYY-MM-DD o null (fecha de recibido de la petición)","pasos":["3 a 5 pasos concretos de cómo proceder"],"resumen":"una frase","texto":"fragmento del texto original que corresponde a esta actividad"}]}
-Hoy es ${todayStr()}.`;
-    const raw = await askClaude(sys, text);
-    const json = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
-    return (json.actividades || []).filter(a => AGENTS[a.agente]);
-  }
-
-  function splitList(text) {
-    const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
-    const bullets = lines.filter(l => /^([-*•]|\d+[.)])\s+/.test(l));
-    return bullets.length >= 2 && bullets.length === lines.length ? bullets : [text];
-  }
-
-  async function dispatch(text, opts = {}) {
-    let acts;
-    let via = 'reglas';
-    if (hasClaude()) {
-      try { acts = await claudeClassify(text); via = 'Claude'; } catch (e) { console.warn(e); }
-    }
-    if (!acts || !acts.length) acts = splitList(text).map(t => ({ ...heuristicClassify(t), texto: t }));
-    const created = [];
-    for (const a of acts) {
-      const agent = AGENTS[a.agente] ? a.agente : 'planificador';
-      const project = opts.project || (projects.includes(a.proyecto) ? a.proyecto : matchProject(a.texto || text));
-      const t = {
-        id: uid(), created: Date.now(), status: 'todo', agent, project,
-        title: a.titulo || 'Pendiente', priority: a.prioridad || 'media',
-        due: opts.due || a.vence || '', time: a.hora || '', remind: '',
-        steps: (a.pasos && a.pasos.length ? a.pasos : DEFAULT_STEPS[agent]).slice(0, 6),
-        input: a.texto || text, notes: a.resumen || '', mode: a.modo || null, auto: !!opts.auto
-      };
-      if (agent === 'juridico') {
-        t.received = a.radicado || todayStr();
-        const dias = Number(a.plazoDias) || 15;
-        t.legalDue = addBusinessDays(t.received, dias);
-        // Fecha interna: 2 días hábiles antes del vencimiento legal.
-        if (!t.due) t.due = addBusinessDays(t.received, Math.max(1, dias - 2));
-        t.notes = `${t.notes}\nPlazo legal: ${dias} días hábiles (Ley 1755 de 2015). Vence el ${fmtDate(t.legalDue)}. Radicado: ${fmtDate(t.received)}.`.trim();
-        t.priority = 'alta';
-      }
-      if (t.due && !t.remind) t.remind = agent === 'agenda' ? '1440' : agent === 'juridico' ? '2880' : '1440';
-      tasks.push(t); created.push(t);
-      logEvent('planificador', `Te asigno «${t.title}»`, true, agent);
-    }
-    saveTasks();
-    ui.receipts = created.map(t => t.id);
-    if (created.length) setBanner(`Entra: «${created[0].title}» → ${AGENTS[created[0].agent].name}${created.length > 1 ? ` y ${created.length - 1} más` : ''}`);
-    created.forEach((t, i) => setTimeout(() => { flyBetween('entrada', 'planificador'); setTimeout(() => flyBetween('planificador', t.agent), 700); }, i * 400));
-    toast(`Valeria repartió ${created.length} ${created.length === 1 ? 'pendiente' : 'pendientes'} (${via}).`);
-    for (const t of created) if (t.auto) startNext(t.agent);
-    return created;
-  }
-
-  const queueOf = k => tasks.filter(t => t.agent === k && t.status === 'todo');
-  const canRun = k => k === 'disenador' || (AI_AGENTS.includes(k) && hasClaude());
-
-  function fdFromTask(t) {
-    const k = t.agent;
-    if (k === 'comunicado') return { project: t.project, tema: t.title, idea: t.input };
-    if (k === 'correo') return { project: t.project, mail: t.input, idea: (t.steps || []).join('; ') || 'Proponer la respuesta adecuada' };
-    if (k === 'juridico') return { project: t.project, modo: t.mode || 'borrador', peticion: t.input, borrador: '', radicado: t.received || todayStr() };
-    if (k === 'disenador') return { project: t.project, titulo: '', texto: '', request: t.input || t.title, escena: '', useAI: hasOpenAI() };
-    return { idea: t.input, taskTitle: t.title, taskMode: true, project: t.project };
-  }
-
-  function startNext(k) {
-    if (office.status[k] === 'trabajando' || !canRun(k)) return;
-    const next = queueOf(k).find(t => t.auto);
-    if (next) runMission(k, fdFromTask(next), next);
-  }
-
-  function cmdbarHtml() {
-    const receipts = (ui.receipts || []).map(id => tasks.find(t => t.id === id)).filter(Boolean);
-    return `<form id="cmdForm" class="cmd">
-        <div class="cmd-main">
-          <span class="cmd-ico">✦</span>
-          <textarea name="text" rows="1" placeholder="${innerWidth < 600 ? 'Deja un pendiente o un correo…' : 'Deja aquí un pendiente o pega un correo… Valeria lo asigna al agente indicado'}"></textarea>
-          <button class="btn btn-gold" id="cmdSend">Enviar</button>
-        </div>
-        <div class="cmd-extra">
-          <select name="project"><option value="">Proyecto: detectar</option>${projects.map(p => `<option>${esc(p)}</option>`).join('')}</select>
-          <label>Vence <input type="date" name="due"></label>
-          <label class="cmd-check"><input type="checkbox" name="auto" ${store.get('autoRun', true) ? 'checked' : ''}> Que el agente empiece de inmediato</label>
-        </div>
-      </form>
-      ${receipts.length ? `<div class="receipts">${receipts.map(t => `
-        <div class="receipt">
-          <div class="r-head"><span class="p-avatar sm" style="background:${AGENTS[t.agent].shirt}">${esc(AGENTS[t.agent].name[0])}</span>
-            <div><b>${esc(t.title)}</b><small>${esc(AGENTS[t.agent].name)} · ${esc(AGENTS[t.agent].role)} · ${esc(t.project)}${t.due ? ' · vence ' + esc(fmtDate(t.due)) : ''}</small></div></div>
-          <ol>${(t.steps || []).map(s => `<li>${esc(s)}</li>`).join('')}</ol>
-        </div>`).join('')}
-        <div class="toolbar"><button class="btn btn-ghost btn-sm" id="rcOffice">Ver en la oficina</button><button class="btn btn-ghost btn-sm" id="rcClose">Cerrar</button></div></div>` : ''}`;
-  }
-
-  function renderCmdbar() {
-    const bar = $('#cmdbar');
-    bar.hidden = ui.view === 'ajustes';
-    if (bar.hidden) return;
-    bar.innerHTML = cmdbarHtml();
-    const f = $('#cmdForm', bar), ta = f.text;
-    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 220) + 'px'; };
-    ta.oninput = grow;
-    ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } };
-    f.auto.onchange = () => store.set('autoRun', f.auto.checked);
-    f.onsubmit = async e => {
-      e.preventDefault();
-      const text = ta.value.trim(); if (!text) return ta.focus();
-      const btn = $('#cmdSend', bar); btn.disabled = true; btn.textContent = 'Asignando…';
-      await dispatch(text, { project: f.project.value, due: f.due.value, auto: f.auto.checked });
-      render();
-    };
-    const ro = $('#rcOffice', bar); if (ro) ro.onclick = () => { ui.receipts = []; setView('agencia'); };
-    const rc = $('#rcClose', bar); if (rc) rc.onclick = () => { ui.receipts = []; renderCmdbar(); };
-  }
-
-  // Recomendaciones de Valeria: qué hacer primero y cómo.
-  function nextActions() {
-    const today = todayStr(), soon = addDays(today, 3);
-    const score = t => (t.status === 'review' ? -1 : 0) + (t.due && t.due < today ? 0 : t.due === today ? 1 : t.due && t.due <= soon ? 2 : t.priority === 'alta' ? 3 : 5);
-    return tasks.filter(t => t.status !== 'done').sort((a, b) => score(a) - score(b) || (a.due || '9').localeCompare(b.due || '9')).slice(0, 3);
-  }
-  function howTo(t) {
-    if (t.status === 'review') return 'Revisar la entrega del agente y aprobarla.';
-    if (t.status === 'todo' && t.agent && canRun(t.agent) && t.agent !== 'planificador') return `${AGENTS[t.agent].name} puede empezar: asígnale la misión desde la oficina.`;
-    return (t.steps && t.steps[0]) || (DEFAULT_STEPS[t.agent] || DEFAULT_STEPS.planificador)[0];
-  }
+  function renderCmdbar() { const b = $('#cmdbar'); if (b) b.hidden = true; }
 
   // ---------------------------------------------------------------- Vista Repositorio
   ui.repo = { tab: 'entregables', type: '', agent: '', project: '', q: '' };
@@ -1747,10 +1680,9 @@ Hoy es ${todayStr()}.`;
     await repo.update(item.id, { status: 'aprobado', approvedAt: Date.now() });
     const t = tasks.find(x => x.id === item.taskId);
     if (t && t.status !== 'done') { t.status = 'done'; t.doneAt = Date.now(); saveTasks(); }
-    for (const [k, r] of Object.entries(office.results)) if (r.repoId === item.id) delete office.results[k];
-    saveResults();
-    logEvent(item.agent, `Entrega aprobada: «${item.title}»`);
-    toast('Aprobado: queda en el repositorio y la tarea pasa a Hecho.');
+    office.pending = office.pending.filter(i => i.id !== item.id);
+    logEvent(item.agent, `Aprobaste «${item.title}»`, true, 'vos');
+    toast(t ? 'Aprobado: queda en Entregables y la tarea pasa a Hecho.' : 'Aprobado: queda en Entregables.');
   }
 
   // ---------------------------------------------------------------- Ajustes
@@ -1833,8 +1765,7 @@ Hoy es ${todayStr()}.`;
     const t = id ? tasks.find(x => x.id === id) : { title: '', project: ui.filterProject || projects[0], status: 'todo', priority: 'media', due: '', time: '', remind: '', notes: '', ...preset };
     fillProjectSelect();
     if (!projects.includes(t.project)) form.project.insertAdjacentHTML('beforeend', `<option>${esc(t.project)}</option>`);
-    form.agent.innerHTML = '<option value="">Yo (coordinación)</option>' + Object.entries(AGENTS).map(([k, a]) => `<option value="${k}">${esc(a.name)} · ${esc(a.role)}</option>`).join('');
-    for (const k of ['title', 'project', 'status', 'priority', 'due', 'time', 'remind', 'notes', 'agent']) form[k].value = t[k] ?? '';
+    for (const k of ['title', 'project', 'status', 'priority', 'due', 'time', 'remind', 'notes']) form[k].value = t[k] ?? '';
     $('#taskSteps').innerHTML = (t.steps && t.steps.length ? `<b>Cómo proceder</b><ol>${t.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '') +
       (t.legalDue ? `<div class="notice">Plazo legal: vence el <b>${esc(fmtDate(t.legalDue))}</b> (radicado ${esc(fmtDate(t.received))}).</div>` : '') +
       (t.input && t.input !== t.title ? `<details><summary>Texto original</summary><div class="output">${esc(t.input)}</div></details>` : '');
@@ -1876,16 +1807,6 @@ Hoy es ${todayStr()}.`;
   document.querySelectorAll('#tabbar button').forEach(b => b.onclick = () => setView(b.dataset.view));
   $('#btnSettings').onclick = () => setView('ajustes');
 
-  // Las tareas creadas antes de la oficina reciben responsable y pasos sugeridos.
-  if (!store.get('migr.agents', false)) {
-    tasks.forEach(t => {
-      if (t.agent !== undefined || t.status === 'done') return;
-      const c = heuristicClassify(t.title);
-      t.agent = c.agente; t.steps = c.pasos; t.input = t.input || t.notes || t.title;
-      if (c.agente === 'juridico') t.mode = 'borrador';
-    });
-    saveTasks(); store.set('migr.agents', true);
-  }
   render();
   checkReminders();
   function dailySummary() {

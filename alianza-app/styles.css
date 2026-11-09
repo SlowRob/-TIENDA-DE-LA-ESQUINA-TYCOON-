@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 /* Paleta institucional Alianza Grupo Inmobiliario */
 :root {
   --azul: #1A3867;
@@ -436,3 +437,69 @@ main.wide { max-width: 1480px; }
   .chip-total { display: none; }
   .o-head h1 { font-size: 24px; }
 }
+
+/* ------------------------------------------------ v4: campos legibles en cualquier tema */
+input, select, textarea { color: var(--texto); background-color: var(--blanco); color-scheme: light; }
+input::placeholder, textarea::placeholder { color: #7D8AA6; opacity: 1; }
+input[type=date], input[type=time] { min-height: 36px; }
+
+/* Tareas */
+.quick { margin: 4px 0 14px; }
+.quick-fields { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.quick-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--azul); }
+.quick-fields select, .quick-fields input { padding: 7px 10px; border: 1.5px solid #B9C7DE; border-radius: 10px; font: inherit; font-size: 14px; color: var(--texto); background: var(--blanco); min-width: 130px; }
+.quick-fields select:focus, .quick-fields input:focus, .tareas-bar select:focus, .tareas-bar input:focus { outline: 2px solid var(--dorado); outline-offset: 1px; }
+.tareas-bar select, .tareas-bar input { padding: 7px 10px; border: 1.5px solid #B9C7DE; border-radius: 10px; font: inherit; color: var(--texto); background: var(--blanco); }
+h2 .count { font-size: 13px; color: var(--texto-2); font-weight: 500; }
+h2.red-t { color: var(--rojo); }
+.red-t { color: var(--rojo); font-weight: 600; }
+.task { align-items: center; }
+.t-actions { display: flex; gap: 6px; align-items: center; flex: none; }
+.team-btn { border: 1px solid var(--borde); background: var(--blanco); color: var(--azul); border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.team-btn:hover { border-color: var(--dorado); background: var(--dorado-claro); }
+.icon-act { text-decoration: none; font-size: 16px; padding: 4px; }
+.board.three { grid-template-columns: repeat(3, minmax(240px, 1fr)); }
+.seg-sm button { padding: 5px 12px; font-size: 13px; }
+.seg-sm { margin-bottom: 0; }
+
+/* Oficina v4 */
+.o-head-actions { display: flex; gap: 8px; align-items: center; }
+.rooms { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ib-sum { font-size: 13.5px; margin: 0 0 8px; line-height: 1.45; }
+.ib-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.find-mini { display: flex; gap: 6px; margin-top: 10px; }
+.find-mini input { flex: 1; min-width: 0; padding: 8px 10px; border: 1.5px solid #B9C7DE; border-radius: 10px; font: inherit; font-size: 13px; }
+.found { margin-top: 10px; display: grid; gap: 8px; }
+.found-row { border: 1px solid var(--borde); border-left: 4px solid var(--dorado); border-radius: 10px; padding: 8px 10px; }
+.found-row b { display: block; font-size: 14px; }
+.found-row small { color: var(--texto-2); font-size: 12px; }
+.ib-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.ib-list li { border: 1px solid var(--borde); border-radius: 10px; padding: 7px 10px; font-size: 13px; }
+.ib-list li b { display: block; }
+.ib-list li small { color: var(--texto-2); }
+.ib-list a { font-size: 12px; color: var(--azul-2); }
+.file-list { list-style: none; padding: 0; margin: -4px 0 10px; font-size: 13px; display: grid; gap: 4px; }
+.file-list li { display: flex; gap: 6px; align-items: center; background: var(--fondo); border-radius: 8px; padding: 4px 8px; }
+.link-btn { margin-left: auto; border: 0; background: none; color: var(--rojo); font: inherit; font-size: 12px; cursor: pointer; }
+.steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 12px; counter-reset: st; }
+.steps li { flex: 1; text-align: center; font-size: 12px; padding: 6px 4px; border-radius: 8px; background: var(--fondo); color: var(--texto-2); counter-increment: st; }
+.steps li::before { content: counter(st) ". "; }
+.steps li.on { background: var(--azul); color: #fff; font-weight: 600; }
+.pet-sum { background: var(--fondo); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; font-size: 13.5px; }
+.pet-sum p { margin: 6px 0; }
+.pet-sum ol, .pet-sum ul { margin: 4px 0; padding-left: 20px; }
+.q-why { display: block; font-weight: 400; color: var(--texto-2); font-size: 12px; margin-top: 2px; }
+.output.small { font-size: 12px; max-height: 240px; overflow: auto; }
+.repo-row.hist { width: 100%; font: inherit; text-align: left; }
+.p-body details summary { cursor: pointer; font-weight: 600; color: var(--azul); margin: 8px 0; }
+.agent-panel { width: 440px; }
+@media (max-width: 1180px) { .rooms { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .task { flex-wrap: wrap; }
+  .t-actions { width: 100%; justify-content: flex-end; }
+  .quick-fields label { flex: 1 1 45%; }
+  .quick-fields select, .quick-fields input { min-width: 0; width: 100%; }
+  .agent-panel { width: auto; }
+}
+.office2 .o-grid { margin-top: 16px; }
