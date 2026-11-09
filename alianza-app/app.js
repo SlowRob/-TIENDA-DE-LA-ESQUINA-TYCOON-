@@ -153,6 +153,7 @@
         <div class="t-title">${esc(t.title)}</div>
         <div class="t-meta">
           <span class="chip">${esc(t.project)}</span>
+          ${t.agent && AGENTS[t.agent] ? `<span class="chip gold">👤 ${esc(AGENTS[t.agent].name)}</span>` : ''}
           ${t.priority === 'alta' ? '<span class="chip gold">Prioridad alta</span>' : ''}
           ${dueChip}
           ${t.remind !== '' && t.remind != null ? '<span>🔔</span>' : ''}
@@ -399,12 +400,52 @@
   }
 
   // ---------------------------------------------------------------- Agencia (IA)
+  // Equipo de la oficina virtual. Cada agente tiene escritorio, área y una sola especialidad.
   const AGENTS = {
-    comunicado: { ico: '✍️', name: 'Redactor de comunicados', engine: 'Claude', desc: 'Comunicados cortos para WhatsApp con el tono de Alianza y bloque de trazabilidad.' },
-    correo: { ico: '📨', name: 'Redactor de respuestas', engine: 'Claude', desc: 'Borradores de respuesta a correos. Tú los copias y envías; la app nunca envía nada.' },
-    planificador: { ico: '🗓️', name: 'Planificador del día', engine: 'Claude', desc: 'Ordena tus pendientes por prioridad y te propone el plan de la jornada.' },
-    disenador: { ico: '🎨', name: 'Diseñador de piezas', engine: 'ChatGPT', desc: 'Flyer con la paleta institucional y los logos originales, sin alterarlos.' }
+    planificador: {
+      name: 'Valeria', role: 'Coordinadora de proyectos', area: 'Dirección', engine: 'Claude',
+      desk: [3.2, 3.2], shirt: '#1A3867', hair: '#3B2A20', dot: '#1A3867',
+      bio: 'Meticulosa. Convierte el caos del día en pasos pequeños.',
+      resp: ['Analizar tus pendientes', 'Elegir las 3 prioridades del día', 'Armar el plan por horas', 'Sugerir qué delegar', 'Alertar vencimientos'],
+      tools: ['tasks.read', 'claude.messages'], risk: 0
+    },
+    comunicado: {
+      name: 'Tomás', role: 'Redactor de comunicados', area: 'Redacción', engine: 'Claude',
+      desk: [10.6, 2.6], shirt: '#95762F', hair: '#1F1A17', dot: '#95762F',
+      bio: 'Escribe claro y cercano. Sigue al pie de la letra el prompt AGI.',
+      resp: ['Comunicados cortos para WhatsApp', 'Tono cercano y formal', 'Ortografía impecable', 'Registro de trazabilidad'],
+      tools: ['claude.messages', 'prompt.AGI'], risk: 0
+    },
+    correo: {
+      name: 'Lucía', role: 'Redactora de respuestas', area: 'Redacción', engine: 'Claude',
+      desk: [14.2, 2.6], shirt: '#2B5297', hair: '#6B3E26', dot: '#2B5297',
+      bio: 'Prepara borradores; tú decides si se envían.',
+      resp: ['Borradores de respuesta a correos', 'Asunto sugerido', 'Marca entre [corchetes] lo que falte', 'Nunca envía correos'],
+      tools: ['claude.messages'], risk: 0
+    },
+    disenador: {
+      name: 'Mateo', role: 'Diseñador gráfico', area: 'Estudio de diseño', engine: 'ChatGPT',
+      desk: [3.2, 10.6], shirt: '#C9A54C', hair: '#2A2A2A', dot: '#C9A54C',
+      bio: 'Respeta los logos como ley. La IA solo pinta el fondo.',
+      resp: ['Flyers 1080×1350 para WhatsApp', 'Paleta azul, dorado y blanco', 'Logos originales sin alterar', 'Exporta PNG'],
+      tools: ['openai.images', 'canvas.compose', 'logos.read'], risk: 0
+    },
+    archivo: {
+      name: 'Sofía', role: 'Archivista de correo', area: 'Archivo y correo', engine: 'Gmail · solo lectura',
+      desk: [11.2, 10.6], shirt: '#3E6DB5', hair: '#111111', dot: '#3E6DB5',
+      bio: 'Lo lee todo y no toca nada.',
+      resp: ['Revisar carpetas por proyecto', 'Encontrar logos adjuntos', 'Convertir correos en tareas', 'Nunca envía, borra ni marca correos'],
+      tools: ['gmail.readonly'], risk: 0
+    },
+    agenda: {
+      name: 'Andrés', role: 'Agenda y recordatorios', area: 'Sala de agenda', engine: 'Calendario',
+      desk: [19.6, 5.6], shirt: '#7A5F22', hair: '#4A3426', dot: '#7A5F22',
+      bio: 'Puntual. Nada se te pasa.',
+      resp: ['Avisos antes de cada vencimiento', 'Enviar pendientes a Google Calendar', 'Exportar .ics con alarmas'],
+      tools: ['notifications', 'calendar.ics'], risk: 0
+    }
   };
+  const VACANTES = [[6.2, 12.4], [15.0, 12.6], [20.4, 11.6]];
 
   const COMUNICADO_SYSTEM = `Eres el redactor y asistente oficial de Alianza Grupo Inmobiliario (empresa de administración de propiedad horizontal en Colombia). Redactas comunicados de administración para canales de WhatsApp (formato flyer o carta digital para lectura rápida en el celular).
 Tono: cercano, amable, claro y resolutivo; genera empatía y confianza con la comunidad sin sonar frío ni rígido, manteniendo la formalidad necesaria.
@@ -479,36 +520,303 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       <label style="margin-top:10px">Subir logo desde el equipo<input type="file" name="logoFile" accept="image/*"></label>`;
   }
 
+  // ---------------------------------------------------------------- Oficina virtual (vista isométrica)
+  const TW = 40, TH = 20; // tamaño de baldosa isométrica
+  const P = (gx, gy, z = 0) => [(gx - gy) * TW / 2, (gx + gy) * TH / 2 - z];
+  const pts = arr => arr.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
+  const poly = (arr, fill, extra = '') => `<polygon points="${pts(arr)}" fill="${fill}" ${extra}/>`;
+  function isoBox(gx, gy, w, d, h, z0, top, left, right, extra = '') {
+    return `<g ${extra}>` +
+      poly([P(gx, gy + d, z0), P(gx + w, gy + d, z0), P(gx + w, gy + d, z0 + h), P(gx, gy + d, z0 + h)], left) +
+      poly([P(gx + w, gy, z0), P(gx + w, gy + d, z0), P(gx + w, gy + d, z0 + h), P(gx + w, gy, z0 + h)], right) +
+      poly([P(gx, gy, z0 + h), P(gx + w, gy, z0 + h), P(gx + w, gy + d, z0 + h), P(gx, gy + d, z0 + h)], top) + '</g>';
+  }
+  const ISO_FLOOR = 'matrix(0.894 0.447 -0.894 0.447 ';
+  const ISO_WALL_X = 'matrix(0.894 0.447 0 1 ';
+
+  const ROOMS = [
+    { x0: 0, y0: 0, x1: 9, y1: 7, label: 'DIRECCIÓN DE PROYECTOS', floor: '#EDF2FA' },
+    { x0: 9, y0: 0, x1: 18, y1: 7, label: 'REDACCIÓN', floor: '#F5F7FC' },
+    { x0: 0, y0: 7, x1: 9, y1: 16, label: 'ESTUDIO DE DISEÑO', floor: '#FBF7EE' },
+    { x0: 9, y0: 7, x1: 18, y1: 16, label: 'ARCHIVO Y CORREO', floor: '#F5F7FC' },
+    { x0: 18, y0: 0, x1: 24, y1: 16, label: 'SALA DE AGENDA', floor: '#EDF2FA' }
+  ];
+  const BOARD_SPOT = [4.6, 1.4];
+
+  const office = {
+    status: {}, // key -> 'libre' | 'trabajando' | 'aprobacion'
+    results: store.get('office.results', {}),
+    log: store.get('office.log', []),
+    open: null, tab: 'chat', returning: {}
+  };
+  const STATUS_TXT = { libre: 'Disponible', trabajando: 'Trabajando…', aprobacion: 'Esperando tu aprobación' };
+  const STATUS_DOT = { libre: '#2E7D4F', trabajando: '#C9A54C', aprobacion: '#2B5297' };
+  const agentStatus = k => office.status[k] || (office.results[k] ? 'aprobacion' : 'libre');
+
+  function logEvent(agent, text, ok = true) {
+    office.log.unshift({ t: Date.now(), agent, text, ok });
+    office.log = office.log.slice(0, 60);
+    store.set('office.log', office.log);
+  }
+  function saveResults() {
+    // Las imágenes ocupan mucho; se guarda solo el texto.
+    const slim = Object.fromEntries(Object.entries(office.results).map(([k, r]) => [k, r.type === 'image' ? { ...r, dataUrl: null } : r]));
+    store.set('office.results', slim);
+  }
+
+  function avatarSvg(a, key, [sx, sy]) {
+    const st = agentStatus(key);
+    const nameW = a.name.length * 7 + 26;
+    return `<g class="avatar ${st === 'trabajando' ? 'working' : ''}" data-agent="${key}" style="transform:translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px)">
+      <ellipse cx="0" cy="0" rx="8" ry="4" fill="rgba(26,56,103,.18)"/>
+      <g class="bob">
+        <rect x="-4.5" y="-11" width="9" height="11" rx="3" fill="#24324F"/>
+        <rect x="-6.5" y="-25" width="13" height="16" rx="5.5" fill="${a.shirt}"/>
+        <circle cx="0" cy="-30.5" r="5.6" fill="#E9C6A1"/>
+        <path d="M-5.8 -31 a5.8 5.8 0 0 1 11.6 0 q-5.8 -3 -11.6 0z" fill="${a.hair}"/>
+      </g>
+      <g class="pill" transform="translate(${-nameW / 2},-58)">
+        <rect width="${nameW}" height="18" rx="9" fill="#fff" stroke="${key === office.open ? BRAND.dorado : '#D7E0EE'}" stroke-width="${key === office.open ? 2 : 1}"/>
+        <circle cx="10" cy="9" r="3.6" fill="${STATUS_DOT[st]}"/>
+        <text x="18" y="12.6" font-size="10.5" font-weight="600" fill="#14213D">${esc(a.name)}</text>
+      </g>
+    </g>`;
+  }
+
+  function deskSvg([dx, dy], screen = '#0F1E3A') {
+    return isoBox(dx, dy, 1.8, 0.9, 12, 0, '#FFFFFF', '#E3E9F3', '#CBD6E8') +
+      isoBox(dx + 0.55, dy + 0.12, 0.75, 0.12, 11, 12, '#33415E', '#1C2742', screen) +
+      isoBox(dx + 0.65, dy + 1.15, 0.55, 0.55, 7, 0, '#3E6DB5', '#2B5297', '#1A3867');
+  }
+  const seatOf = ([dx, dy]) => [dx + 0.92, dy + 1.45];
+  function plantSvg(gx, gy) {
+    const [x, y] = P(gx + 0.25, gy + 0.25, 8);
+    return isoBox(gx, gy, 0.5, 0.5, 8, 0, '#E7DCC2', '#C9B68A', '#B39C66') +
+      `<circle cx="${x}" cy="${y - 8}" r="9" fill="#3C8D5A"/><circle cx="${x - 4}" cy="${y - 14}" r="6" fill="#4FA66D"/>`;
+  }
+
+  function sceneSvg() {
+    const items = []; // [profundidad, svg]
+    let floor = '';
+    ROOMS.forEach(r => {
+      floor += poly([P(r.x0, r.y0), P(r.x1, r.y0), P(r.x1, r.y1), P(r.x0, r.y1)], r.floor, 'stroke="#DCE5F2" stroke-width="1"');
+      const [lx, ly] = P(r.x0 + 0.5, r.y1 - 0.6);
+      floor += `<text transform="${ISO_FLOOR}${lx.toFixed(1)} ${ly.toFixed(1)})" font-size="9.5" letter-spacing="2.4" font-weight="600" fill="#8DA2C4">${r.label}</text>`;
+    });
+    // Paredes del fondo
+    const WH = 54;
+    let walls = poly([P(0, 0), P(24, 0), P(24, 0, WH), P(0, 0, WH)], '#F4F7FC', 'stroke="#C9D7EC"') +
+      poly([P(0, 0), P(0, 16), P(0, 16, WH), P(0, 0, WH)], '#EAF0F9', 'stroke="#C9D7EC"') +
+      `<polyline points="${pts([P(0, 16, WH), P(0, 0, WH), P(24, 0, WH)])}" fill="none" stroke="${BRAND.dorado}" stroke-width="2"/>`;
+    // Centro de misiones (pantalla en la pared)
+    walls += poly([P(1.6, 0, 14), P(7.6, 0, 14), P(7.6, 0, 46), P(1.6, 0, 46)], '#0F1E3A', `stroke="${BRAND.dorado}" stroke-width="1.5"`);
+    const [tx, ty] = P(1.9, 0, 40);
+    walls += `<text transform="${ISO_WALL_X}${tx.toFixed(1)} ${ty.toFixed(1)})" font-size="6.5" letter-spacing="1.6" font-weight="700" fill="#E9D9AE">CENTRO DE MISIONES</text>`;
+    const live = office.log.slice(0, 3);
+    live.forEach((e, i) => {
+      const [mx, my] = P(1.9, 0, 32 - i * 7);
+      walls += `<text transform="${ISO_WALL_X}${mx.toFixed(1)} ${my.toFixed(1)})" font-size="4.6" fill="${e.ok ? '#9FC3F2' : '#F2B8B5'}">${esc((e.ok ? '✓ ' : '! ') + e.text.slice(0, 46))}</text>`;
+    });
+    if (!live.length) {
+      const [mx, my] = P(1.9, 0, 32);
+      walls += `<text transform="${ISO_WALL_X}${mx.toFixed(1)} ${my.toFixed(1)})" font-size="4.6" fill="#9FC3F2">Sin misiones aún. Toca un agente.</text>`;
+    }
+    // Calendario de pared en la sala de agenda
+    walls += poly([P(19, 0, 16), P(23, 0, 16), P(23, 0, 44), P(19, 0, 44)], '#FFFFFF', 'stroke="#C9D7EC"') +
+      poly([P(19, 0, 38), P(23, 0, 38), P(23, 0, 44), P(19, 0, 44)], BRAND.azul);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+      const busy = tasks.some(t => t.status !== 'done' && t.due) && (i + j * 4) % 3 === 0;
+      walls += poly([P(19.3 + i * 0.95, 0, 33 - j * 6), P(19.95 + i * 0.95, 0, 33 - j * 6), P(19.95 + i * 0.95, 0, 29 - j * 6), P(19.3 + i * 0.95, 0, 29 - j * 6)], busy ? '#E9D9AE' : '#EDF2FA');
+    }
+    // Tabiques de vidrio con huecos de puerta
+    const glass = (a, b) => poly([P(...a), P(...b), P(...b, 26), P(...a, 26)], 'rgba(43,82,151,.07)', 'stroke="#9DB8E2" stroke-width=".8"') +
+      `<line x1="${P(...a, 26)[0]}" y1="${P(...a, 26)[1]}" x2="${P(...b, 26)[0]}" y2="${P(...b, 26)[1]}" stroke="#5F8BD0" stroke-width="1.6"/>`;
+    const partitions = [
+      [[9, 0], [9, 2.2], 2.2], [[9, 3.8], [9, 9.2], 9.2], [[9, 10.8], [9, 16], 16],
+      [[0, 7], [3.4, 7], 7], [[5.2, 7], [12.4, 7], 7], [[14.2, 7], [18, 7], 7],
+      [[18, 0], [18, 3.2], 3.2], [[18, 4.8], [18, 11.2], 11.2], [[18, 12.8], [18, 16], 16]
+    ];
+    partitions.forEach(([a, b, d]) => items.push([a[0] + d - 0.2, glass(a, b)]));
+    // Mobiliario
+    Object.values(AGENTS).forEach(a => items.push([a.desk[0] + a.desk[1] + 1, deskSvg(a.desk, '#2B5297')]));
+    VACANTES.forEach(v => items.push([v[0] + v[1] + 1, deskSvg(v)]));
+    for (let i = 0; i < 6; i++) items.push([16 + 8.4 + i * 1.1 + 1, isoBox(16.6, 8.4 + i * 1.1, 0.9, 0.9, 30, 0, '#2B3E66', '#1A2A4A', '#20365F')]);
+    items.push([20 + 9 + 2, isoBox(19.6, 8.6, 2.6, 1.4, 10, 0, '#FFFFFF', '#E3E9F3', '#CBD6E8')]); // mesa de reunión
+    items.push([22.6 + 14 + 1, isoBox(19.4, 14, 3.2, 1, 9, 0, '#D9C690', '#B39C66', BRAND.dorado)]); // sofá
+    [[0.4, 6.1], [8.2, 0.4], [17.2, 0.4], [0.4, 15.2], [8.2, 15.2], [23.2, 0.4], [17.2, 15.2]].forEach(([x, y]) => items.push([x + y + 0.5, plantSvg(x, y)]));
+    // Vacantes
+    VACANTES.forEach(v => {
+      const [sx, sy] = P(...seatOf(v));
+      items.push([v[0] + v[1] + 2, `<g class="pill vacante" transform="translate(${sx - 32},${sy - 40})"><rect width="64" height="18" rx="9" fill="#fff" stroke="#D7E0EE" stroke-dasharray="3 2"/><text x="10" y="12.6" font-size="10" fill="#8DA2C4">+ Vacante</text></g>`]);
+    });
+    // Agentes
+    Object.entries(AGENTS).forEach(([k, a]) => {
+      const atBoard = office.returning[k] || agentStatus(k) === 'trabajando';
+      const pos = atBoard ? BOARD_SPOT : seatOf(a.desk);
+      const home = seatOf(a.desk);
+      items.push([home[0] + home[1] + 2, avatarSvg(a, k, P(...pos))]);
+    });
+    items.sort((a, b) => a[0] - b[0]);
+    return `<svg viewBox="-345 -95 845 520" class="office-svg" role="img" aria-label="Oficina virtual de la Coordinación de Proyectos">
+      ${floor}${walls}${items.map(i => i[1]).join('')}</svg>`;
+  }
+
+  const live = () => !!(settings.claudeKey || settings.openaiKey);
+  const hhmmss = t => new Date(t).toLocaleTimeString('es-CO', { hour12: false, timeZone: TZ });
+
   views.agencia = () => `
-    <h1>Agencia</h1><p class="sub">Cada agente se encarga de una actividad. Tú das la instrucción; nada se publica ni se envía sin tu aprobación.</p>
-    <div class="gold-line"></div>
-    <div class="grid agents">${Object.entries(AGENTS).map(([k, a]) => `
-      <div class="card agent ${k === ui.agent ? 'active' : ''}" data-agent="${k}">
-        <div class="ico">${a.ico}</div><h3>${a.name}</h3><p>${a.desc}</p>
-        <div class="engine"><span class="chip ${a.engine === 'Claude' ? '' : 'gold'}">${a.engine}</span></div>
-      </div>`).join('')}</div>
-    <div class="card workspace" style="margin-top:12px">
-      <h2 style="margin-top:0">${AGENTS[ui.agent].ico} ${AGENTS[ui.agent].name}</h2>
-      <form id="agentForm">${agentForm(ui.agent)}
-        <button class="btn btn-primary" id="btnRun">Generar</button>
-      </form>
-      <h2>Resultado</h2>
-      <div class="output" id="out"><span class="sub">Aquí aparecerá el resultado.</span></div>
-      <div class="toolbar" id="outActions" style="margin-top:10px" hidden></div>
+    <div class="office">
+      <div class="office-hud">
+        <div class="hud-card"><span class="hud-mark">A</span><div><strong>Alianza Office</strong><small>Coordinación de Proyectos · Bogotá</small></div></div>
+        <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : 'Modo demo · agrega claves en Ajustes'}</div>
+      </div>
+      <div class="office-stage" id="stage">${sceneSvg()}</div>
+      <div class="agent-strip" id="strip"></div>
+      <aside class="agent-panel" id="panel" hidden></aside>
+      <div class="mission-log" id="mlog"></div>
     </div>`;
 
-  views.agencia.after = root => {
-    root.querySelectorAll('[data-agent]').forEach(el => el.onclick = () => { ui.agent = el.dataset.agent; render(); });
-    const form = $('#agentForm', root);
-    const out = $('#out', root), actions = $('#outActions', root);
+  function renderStrip() {
+    $('#strip').innerHTML = Object.entries(AGENTS).map(([k, a]) => `
+      <button class="strip-chip ${k === office.open ? 'active' : ''}" data-agent="${k}">
+        <span class="dot" style="background:${STATUS_DOT[agentStatus(k)]}"></span>${esc(a.name)}<small>${esc(a.role)}</small>
+      </button>`).join('');
+    $('#strip').querySelectorAll('[data-agent]').forEach(b => b.onclick = () => openAgent(b.dataset.agent));
+  }
+  function renderLog() {
+    const el = $('#mlog'); if (!el) return;
+    el.innerHTML = office.log.slice(0, 6).map(e => `<div class="log-row ${e.ok ? '' : 'err'}"><time>${hhmmss(e.t)}</time><span>${e.ok ? '✔' : '⚠'}</span><b>${esc(AGENTS[e.agent]?.name || '')}</b> ${esc(e.text)}</div>`).join('')
+      || '<div class="log-row"><time>--:--:--</time><span>·</span> Aquí verás cada misión del equipo.</div>';
+  }
+  function renderScene() {
+    const st = $('#stage'); if (!st) return;
+    st.innerHTML = sceneSvg();
+    st.querySelectorAll('.avatar').forEach(g => g.onclick = () => openAgent(g.dataset.agent));
+    // Animación de caminata: del puesto al centro de misiones y de regreso.
+    Object.entries(AGENTS).forEach(([k, a]) => {
+      const g = st.querySelector(`.avatar[data-agent="${k}"]`);
+      if (office.returning[k]) {
+        delete office.returning[k];
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const [x, y] = P(...seatOf(a.desk)); g.style.transform = `translate(${x}px,${y}px)`;
+        }));
+      } else if (office.walkTo === k) {
+        office.walkTo = null;
+        const [hx, hy] = P(...seatOf(a.desk)); g.style.transition = 'none'; g.style.transform = `translate(${hx}px,${hy}px)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          g.style.transition = ''; const [x, y] = P(...BOARD_SPOT); g.style.transform = `translate(${x}px,${y}px)`;
+        }));
+      }
+    });
+    renderStrip();
+  }
+  function refreshOffice() { if (ui.view !== 'agencia') return; renderScene(); renderLog(); if (office.open) renderPanel(); }
 
-    if (ui.agent === 'disenador') {
+  function openAgent(k) {
+    office.open = office.open === k ? null : k;
+    office.tab = 'chat';
+    renderScene(); renderPanel();
+  }
+
+  function renderPanel() {
+    const panel = $('#panel'); if (!panel) return;
+    const k = office.open;
+    if (!k) { panel.hidden = true; return; }
+    const a = AGENTS[k], st = agentStatus(k);
+    panel.hidden = false;
+    const tabs = ['actividad', 'chat', 'perfil'].map(t => `<button class="ptab ${office.tab === t ? 'active' : ''}" data-tab="${t}">${{ actividad: 'Actividad', chat: 'Chat', perfil: 'Perfil' }[t]}</button>`).join('');
+    let body = '';
+    if (office.tab === 'perfil') {
+      body = `<p class="bio">${esc(a.bio)}</p>
+        <h4>Responsabilidades</h4><ul>${a.resp.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+        <h4>Herramientas</h4><div class="tools">${a.tools.map(t => `<code>${esc(t)}</code>`).join('')}</div>
+        <h4>Autonomía</h4><p class="sub">Riesgo máximo sin aprobación: <b>${a.risk} / 4</b>. No envía, publica ni modifica nada sin tu visto bueno.</p>
+        <h4>Motor</h4><span class="chip ${a.engine === 'ChatGPT' ? 'gold' : ''}">${esc(a.engine)}</span>`;
+    } else if (office.tab === 'actividad') {
+      const mine = office.log.filter(e => e.agent === k);
+      body = mine.length ? mine.map(e => `<div class="log-row ${e.ok ? '' : 'err'}"><time>${hhmmss(e.t)}</time><span>${e.ok ? '✔' : '⚠'}</span>${esc(e.text)}</div>`).join('') : '<div class="empty">Aún no tiene misiones.</div>';
+    } else {
+      body = chatBody(k);
+    }
+    panel.innerHTML = `
+      <header>
+        <div class="p-avatar" style="background:${a.shirt}">${esc(a.name[0])}</div>
+        <div><strong>${esc(a.name)}</strong><small>${esc(a.role)} · ${esc(a.area)}</small>
+          <span class="p-status"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${STATUS_TXT[st]}</span></div>
+        <button class="p-close" aria-label="Cerrar">×</button>
+      </header>
+      <nav class="ptabs">${tabs}</nav>
+      <div class="p-body workspace">${body}</div>`;
+    panel.querySelector('.p-close').onclick = () => { office.open = null; renderPanel(); renderScene(); };
+    panel.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { office.tab = b.dataset.tab; renderPanel(); });
+    if (office.tab === 'chat') bindChat(k, panel);
+  }
+
+  function chatBody(k) {
+    if (k === 'archivo') return `
+      <p>Hola, soy Sofía. Reviso tu Gmail <b>solo en lectura</b>: las carpetas de cada proyecto, los pendientes y los logos adjuntos.</p>
+      <div class="notice">Permiso usado: <code>gmail.readonly</code>. Con él no puedo enviar, responder, borrar ni marcar correos.</div>
+      <p class="sub">${gmail.token ? `Conectada · ${gmail.labels.length} carpetas.` : 'Aún no estoy conectada.'} Logos guardados: ${logos.length}.</p>
+      <button class="btn btn-primary" id="goMail">${gmail.token ? 'Abrir carpetas' : 'Conectar Gmail (solo lectura)'}</button>`;
+    if (k === 'agenda') {
+      const next = tasks.filter(t => t.status !== 'done' && t.due).sort((x, y) => (x.due + x.time).localeCompare(y.due + y.time)).slice(0, 6);
+      return `<p>Soy Andrés. Te aviso antes de cada vencimiento y paso tus pendientes al calendario.</p>
+        ${next.map(t => `<div class="mini-task"><div><b>${esc(t.title)}</b><small>${esc(t.project)} · ${esc(fmtDate(t.due))}${t.time ? ' ' + esc(t.time) : ''}</small></div>
+          <a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(googleCalendarUrl(t))}">📅</a></div>`).join('') || '<div class="empty">No hay pendientes con fecha.</div>'}
+        <div class="toolbar" style="margin-top:10px">
+          <button class="btn btn-gold btn-sm" id="agIcs">Exportar todo (.ics)</button>
+          ${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn btn-ghost btn-sm" id="agNotif">🔔 Activar avisos</button>' : ''}
+        </div>`;
+    }
+    const r = office.results[k];
+    const working = agentStatus(k) === 'trabajando';
+    let result = '';
+    if (r) {
+      result = `<h4>Última entrega</h4>` + (r.type === 'image'
+        ? (r.dataUrl ? `<img class="result-img" src="${r.dataUrl}" alt="Pieza generada">` : '<div class="empty">La imagen no se guarda al recargar; vuelve a generarla.</div>')
+        : `<div class="output">${esc(r.text)}</div>`) +
+        `<div class="toolbar" style="margin-top:8px">
+          ${r.type === 'image' && r.dataUrl ? '<button class="btn btn-gold btn-sm" id="rDown">⬇️ Descargar PNG</button>' : ''}
+          ${r.type !== 'image' ? '<button class="btn btn-ghost btn-sm" id="rCopy">Copiar</button>' : ''}
+          ${k === 'comunicado' && r.type !== 'image' ? '<button class="btn btn-gold btn-sm" id="rDesign">Pasar a Mateo (diseño)</button>' : ''}
+          <button class="btn btn-ghost btn-sm" id="rApprove">✓ Aprobar</button>
+        </div>`;
+    }
+    return `<form id="agentForm">${agentForm(k)}
+        <button class="btn btn-primary" id="btnRun" ${working ? 'disabled' : ''}>${working ? 'Trabajando…' : 'Asignar misión'}</button>
+      </form>${result}`;
+  }
+
+  function bindChat(k, panel) {
+    const gm = $('#goMail', panel); if (gm) gm.onclick = () => { setView('correo'); if (!gmail.token) connectGmail(); };
+    const ai = $('#agIcs', panel); if (ai) ai.onclick = () => { downloadIcs(tasks.filter(t => t.status !== 'done' && t.due), 'pendientes-alianza.ics'); logEvent('agenda', 'Exportó los pendientes al calendario (.ics)'); renderLog(); };
+    const an = $('#agNotif', panel); if (an) an.onclick = async () => { await Notification.requestPermission(); renderPanel(); };
+    const form = $('#agentForm', panel); if (!form) return;
+    const r = office.results[k];
+    if (r) {
+      const rc = $('#rCopy', panel); if (rc) rc.onclick = () => navigator.clipboard.writeText(r.text).then(() => toast('Copiado.'));
+      const rd = $('#rDown', panel); if (rd) rd.onclick = () => { const a = document.createElement('a'); a.href = r.dataUrl; a.download = `pieza-${(r.project || 'alianza').replace(/\W+/g, '-').toLowerCase()}.png`; a.click(); };
+      const rs = $('#rDesign', panel); if (rs) rs.onclick = () => {
+        const titulo = (r.text.match(/T[ÍI]TULO:\s*(.+)/i) || [])[1] || '';
+        const texto = ((r.text.match(/MENSAJE:\s*([\s\S]*?)(?:\n\s*FIRMA:|REGISTRO DE TRAZABILIDAD)/i) || [])[1] || r.text).trim();
+        store.set('agent.disenador', { ...store.get('agent.disenador', {}), project: r.project, titulo, texto });
+        logEvent('comunicado', `Entregó el texto a Mateo para la pieza de ${r.project}`);
+        openAgent('disenador');
+      };
+      $('#rApprove', panel).onclick = () => {
+        const t = tasks.find(x => x.id === r.taskId);
+        if (t) { t.status = 'done'; t.doneAt = Date.now(); saveTasks(); }
+        logEvent(k, 'Entrega aprobada por coordinación');
+        delete office.results[k]; saveResults(); refreshOffice(); toast('Aprobado y marcado como hecho en el tablero.');
+      };
+    }
+    if (k === 'disenador') {
       const paintLogos = () => {
         const proj = form.project.value;
         const own = logos.filter(l => l.project === proj || l.project === 'General / AGI');
-        $('#logoPick', root).innerHTML = own.length
+        $('#logoPick', panel).innerHTML = own.length
           ? own.map(l => `<div class="logo-tile selected" title="${esc(l.project)}"><img src="${l.dataUrl}" alt=""><div>${esc(l.name)}</div></div>`).join('')
-          : '<div class="sub" style="grid-column:1/-1">Sin logos guardados. Búscalos en la pestaña Correo dentro de la carpeta del proyecto o súbelos aquí.</div>';
+          : '<div class="sub" style="grid-column:1/-1">Sin logos guardados. Pídeselos a Sofía (Archivo) o súbelos aquí.</div>';
       };
       form.project.onchange = paintLogos; paintLogos();
       form.logoFile.onchange = () => {
@@ -518,37 +826,51 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
         rd.readAsDataURL(f);
       };
     }
+    form.onsubmit = e => { e.preventDefault(); runMission(k, form); };
+  }
 
-    form.onsubmit = async e => {
-      e.preventDefault();
-      const fd = Object.fromEntries(new FormData(form));
-      delete fd.logoFile;
-      fd.useAI = !!form.useAI?.checked;
-      store.set('agent.' + ui.agent, fd);
-      const btn = $('#btnRun', root); btn.disabled = true; btn.textContent = 'Trabajando…';
-      out.textContent = 'Trabajando…'; actions.hidden = true;
-      try {
-        if (ui.agent === 'disenador') {
-          await runDesigner(fd, out, actions);
-        } else {
-          const text = await runWriter(ui.agent, fd);
-          out.textContent = text;
-          actions.hidden = false;
-          actions.innerHTML = `<button class="btn btn-ghost btn-sm" id="aCopy">Copiar</button>
-            ${ui.agent === 'comunicado' ? '<button class="btn btn-gold btn-sm" id="aDesign">Enviar al Diseñador</button>' : ''}
-            <button class="btn btn-ghost btn-sm" id="aTask">+ Crear tarea de seguimiento</button>`;
-          $('#aCopy').onclick = () => navigator.clipboard.writeText(text).then(() => toast('Copiado.'));
-          $('#aTask').onclick = () => openTask(null, { title: `Revisar y aprobar: ${AGENTS[ui.agent].name.toLowerCase()}`, project: fd.project || 'General / AGI', status: 'review', notes: text.slice(0, 1500) });
-          const ad = $('#aDesign'); if (ad) ad.onclick = () => {
-            const titulo = (text.match(/T[ÍI]TULO:\s*(.+)/i) || [])[1] || fd.tema;
-            const texto = ((text.match(/MENSAJE:\s*([\s\S]*?)(?:\n\s*FIRMA:|REGISTRO DE TRAZABILIDAD)/i) || [])[1] || text).trim();
-            store.set('agent.disenador', { ...store.get('agent.disenador', {}), project: fd.project, titulo, texto });
-            ui.agent = 'disenador'; render();
-          };
-        }
-      } catch (err) { out.textContent = '⚠️ ' + err.message; }
-      btn.disabled = false; btn.textContent = 'Generar';
-    };
+  async function runMission(k, form) {
+    const a = AGENTS[k];
+    const fd = Object.fromEntries(new FormData(form));
+    delete fd.logoFile;
+    fd.useAI = !!form.useAI?.checked;
+    store.set('agent.' + k, fd);
+    const brief = fd.tema || fd.titulo || (fd.idea || '').slice(0, 40) || a.role;
+    const project = fd.project || 'General / AGI';
+    // La misión queda en el tablero: En curso → En revisión (tu aprobación) → Hecho.
+    const task = { id: uid(), created: Date.now(), title: `${a.name}: ${brief}`, project, status: 'doing', priority: 'media', due: '', time: '', remind: '', notes: `Misión asignada a ${a.name} (${a.role}).`, agent: k };
+    tasks.push(task); saveTasks();
+    office.status[k] = 'trabajando'; office.walkTo = k;
+    logEvent(k, `Inició misión «${brief}»`);
+    refreshOffice();
+    try {
+      let result;
+      if (k === 'disenador') {
+        const dataUrl = await runDesigner(fd);
+        result = { type: 'image', dataUrl, project, taskId: task.id };
+      } else {
+        const text = await runWriter(k, fd);
+        result = { type: 'text', text, project, taskId: task.id };
+        task.notes += '\n\n' + text.slice(0, 2000);
+      }
+      office.results[k] = result; saveResults();
+      task.status = 'review'; saveTasks();
+      logEvent(k, `Misión completada: «${brief}» · espera tu aprobación`);
+    } catch (err) {
+      task.status = 'todo'; task.notes += '\n\nNo se completó: ' + err.message; saveTasks();
+      logEvent(k, `No pudo completar «${brief}»: ${err.message}`, false);
+      toast('⚠️ ' + err.message);
+    }
+    delete office.status[k];
+    office.returning[k] = true;
+    refreshOffice();
+  }
+
+  views.agencia.after = root => {
+    renderScene(); renderLog(); renderPanel();
+    const stage = $('#stage', root);
+    // En el celular la oficina se desplaza horizontalmente; se centra al abrir.
+    stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
   };
 
   function runWriter(key, fd) {
@@ -567,7 +889,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
   }
 
   // Compone la pieza: fondo (IA o plantilla) + logos originales sin alterar + textos.
-  async function runDesigner(fd, out, actions) {
+  async function runDesigner(fd) {
     const W = 1080, H = 1350;
     const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
@@ -576,7 +898,6 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     ctx.fillStyle = BRAND.blanco; ctx.fillRect(0, 0, W, H);
     const imgH = 560;
     if (fd.useAI) {
-      out.textContent = 'ChatGPT está creando la imagen de fondo…';
       const prompt = `Fotografía/ilustración profesional para comunicado de administración residencial en Colombia: ${fd.escena || fd.titulo}. Estilo limpio, elegante y luminoso, con tonos azul institucional (#1A3867), dorado (#95762F) y blanco. SIN texto, SIN letras, SIN logotipos, SIN marcas de agua.`;
       const bg = await loadImg(await askOpenAIImage(prompt));
       const s = Math.max(W / bg.width, imgH / bg.height);
@@ -618,13 +939,9 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     ctx.fillStyle = '#E9D9AE'; ctx.fillText('Alianza Grupo Inmobiliario', W - 70, H - barH / 2 + 32);
     ctx.textAlign = 'left';
 
-    out.innerHTML = ''; out.appendChild(canvas);
     if (y > H - barH - 20) toast('El texto es largo: considera acortarlo para lectura en celular.');
     if (!chosen.length) toast('La pieza no tiene logos: agrégalos desde Correo o súbelos.');
-    actions.hidden = false;
-    actions.innerHTML = '<button class="btn btn-gold btn-sm" id="aDown">⬇️ Descargar PNG</button><button class="btn btn-ghost btn-sm" id="aTask">+ Tarea: aprobar pieza</button>';
-    $('#aDown').onclick = () => { const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = `pieza-${(fd.project || 'alianza').replace(/\W+/g, '-').toLowerCase()}.png`; a.click(); };
-    $('#aTask').onclick = () => openTask(null, { title: `Aprobar pieza gráfica: ${fd.titulo}`, project: fd.project, status: 'review', notes: fd.texto });
+    return canvas.toDataURL('image/png');
   }
 
   function wrap(ctx, text, x, y, maxW, lh) {

@@ -12,7 +12,7 @@ Toma como referencia las funciones de Trello que compartiste (tableros, bandeja 
 | Convertir correos en tareas | Reenviar correos a Trello | Pestaña **Correo**: lee Gmail y crea la tarea con un clic. **Solo lectura** |
 | Recordatorios | Notificaciones push | Notificaciones del navegador según el aviso que elijas en cada tarea |
 | Calendario | Integración con Google/Outlook | Botón "Calendario" por tarea (Google Calendar) y exportación **.ics** de todos los pendientes, con alarma |
-| IA | Resúmenes (plan de pago) | **Agencia** con agentes especializados: Claude para redactar y ChatGPT para piezas gráficas |
+| IA | Resúmenes (plan de pago) | **Oficina virtual** con agentes especializados: Claude para redactar y ChatGPT para piezas gráficas |
 
 Lo que salió al revisar tu correo (sin hacerle ningún cambio):
 - Cada proyecto tiene su propia carpeta: Madero, Singular, Vita, Cúspide, Castilla Living, Verde Pino y otras. Esas carpetas son la lista de proyectos de la app.
@@ -23,19 +23,35 @@ Lo que salió al revisar tu correo (sin hacerle ningún cambio):
 ## 2. Diseño
 
 - **Colores:** fondo blanco, azul institucional para la estructura y dorado solo como acento.
-- **Navegación:** 5 pestañas fijas abajo, como en una app de celular: Hoy · Tablero · Correo · Agencia · Ajustes.
+- **Navegación:** 5 pestañas fijas abajo, como en una app de celular: Hoy · Tablero · Correo · Oficina · Ajustes.
 - Botón dorado **"+ Nueva tarea"** siempre visible.
 - Se puede instalar en el celular (PWA): en Safari, *Compartir → Agregar a inicio*.
 
-### Agencia: un agente para cada trabajo
-| Agente | Motor | Qué entrega |
-|---|---|---|
-| ✍️ Redactor de comunicados | Claude | Comunicado para WhatsApp con título, mensaje, firma y registro de trazabilidad |
-| 📨 Redactor de respuestas | Claude | Borrador de respuesta a un correo. Tú lo copias y lo envías; la app nunca envía nada |
-| 🗓️ Planificador del día | Claude | 3 prioridades, un plan por horas, qué delegar y alertas |
-| 🎨 Diseñador de piezas | ChatGPT (gpt-image-1) | Flyer de 1080×1350 con la paleta y los **logos originales sin alterar**. La IA solo crea el fondo |
+### Oficina virtual: un agente para cada trabajo
+La pestaña **Oficina** muestra el equipo en una vista isométrica, inspirada en el video de referencia y adaptada a los colores de Alianza. Tiene cinco áreas: Dirección de Proyectos, Redacción, Estudio de diseño, Archivo y correo, y Sala de agenda.
 
-Flujo de trabajo: el Redactor escribe el comunicado → **"Enviar al Diseñador"** → se descarga el PNG → **"+ Tarea: aprobar pieza"**.
+Cada agente tiene su escritorio, una etiqueta con su nombre y un punto de color que indica su estado:
+- Verde: disponible.
+- Dorado: trabajando.
+- Azul: esperando tu aprobación.
+
+Al tocar un agente se abre su ficha con tres pestañas: **Actividad**, **Chat** (donde le asignas la misión) y **Perfil** (responsabilidades, herramientas y autonomía).
+
+| Agente | Rol | Motor |
+|---|---|---|
+| Valeria | Coordinadora de proyectos: prioridades y plan del día | Claude |
+| Tomás | Redactor de comunicados para WhatsApp con trazabilidad (prompt AGI) | Claude |
+| Lucía | Redactora de respuestas a correos (solo borradores) | Claude |
+| Mateo | Diseñador de piezas 1080×1350 con los logos originales sin alterar | ChatGPT |
+| Sofía | Archivista: carpetas, pendientes y logos del correo | Gmail · solo lectura |
+| Andrés | Agenda: recordatorios, Google Calendar y archivo .ics | Calendario |
+
+Cómo avanza una misión:
+1. Cuando asignas una misión, el agente camina al **Centro de misiones** y la misión aparece en el Tablero como *En curso*.
+2. Al terminar, la tarea pasa a *En revisión* y queda esperando tu aprobación.
+3. Al pulsar **✓ Aprobar**, la tarea pasa a *Hecho*.
+
+Abajo de la oficina, el registro muestra cada misión con su hora. Tomás puede pasarle su texto a Mateo con el botón **"Pasar a Mateo"**.
 
 ### Logos
 En **Correo**, abre la carpeta de un proyecto y pulsa **"Buscar logos en esta carpeta"**. Luego eliges cuál usar. También puedes subirlo desde el equipo. Los logos se ponen sobre un recuadro blanco, sin cambiar su proporción ni sus colores.
