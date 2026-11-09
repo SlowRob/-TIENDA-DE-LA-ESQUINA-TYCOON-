@@ -232,7 +232,7 @@ dialog::backdrop { background: rgba(20, 33, 61, .45); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
 .agent-panel {
-  position: fixed; top: 150px; right: max(16px, calc((100vw - 1100px) / 2 + 8px)); z-index: 8; width: 380px; max-height: calc(100vh - 240px);
+  position: fixed; top: 150px; right: max(16px, calc((100vw - 1480px) / 2 + 16px)); z-index: 20; width: 400px; max-height: calc(100vh - 240px);
   display: flex; flex-direction: column;
   background: var(--blanco); border: 1px solid var(--borde); border-radius: 16px; box-shadow: 0 16px 40px rgba(20,33,61,.18);
 }
@@ -342,6 +342,107 @@ details.manual summary { cursor: pointer; font-weight: 600; color: var(--azul); 
   .top-actions .btn { padding: 8px 10px; font-size: 13px; }
 }
 
+/* ------------------------------------------------ La oficina (vista central) */
+main.wide { max-width: 1480px; }
+.office2 { position: relative; }
+.o-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.o-head h1 { font-size: 30px; letter-spacing: -.5px; margin: 0; }
+.o-head .sub { margin: 4px 0 0; }
+.room-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+.room-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--borde); background: var(--blanco); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; color: var(--texto); cursor: pointer; }
+.room-chip b { color: var(--texto-2); font-weight: 600; }
+.room-chip.active { background: var(--azul); color: #fff; border-color: var(--azul); }
+.room-chip.active b { color: #E9D9AE; }
+.chip-total { margin-left: auto; font-size: 12px; color: var(--texto-2); }
+.o-grid { display: grid; grid-template-columns: 250px minmax(0, 1fr) 290px; gap: 16px; align-items: start; }
+.o-card { background: var(--blanco); border: 1px solid var(--borde); border-radius: 16px; padding: 12px; box-shadow: var(--sombra); margin-bottom: 12px; }
+.o-card h3 { margin: 2px 4px 10px; font-size: 14px; color: var(--azul); display: flex; justify-content: space-between; }
+.o-card h3 span { color: var(--texto-2); font-weight: 500; }
+.team-row { width: 100%; display: flex; gap: 10px; align-items: center; background: none; border: 0; border-radius: 12px; padding: 7px 6px; font: inherit; text-align: left; cursor: pointer; color: var(--texto); }
+.team-row:hover, .team-row.active { background: var(--azul-claro); }
+.tr-main { flex: 1; min-width: 0; }
+.tr-main b { display: block; font-size: 14px; }
+.tr-main small { display: block; font-size: 12px; color: var(--texto-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-st { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.p-avatar.xs { width: 24px; height: 24px; font-size: 11px; border-width: 1px; }
+.chat-row { display: flex; gap: 8px; padding: 6px 2px; border-top: 1px solid var(--borde); }
+.chat-row:first-child { border-top: 0; }
+.chat-row b { font-size: 12.5px; color: var(--azul); }
+.chat-row time { margin-left: 6px; font-size: 11px; color: var(--texto-2); }
+.chat-row p { margin: 2px 0 0; font-size: 12.5px; color: var(--texto); line-height: 1.35; }
+.chat-row.err p { color: var(--rojo); }
+
+.stage2 { position: relative; background: #0A1730; border-radius: 22px; padding: 64px 14px 14px; box-shadow: 0 18px 50px rgba(10, 23, 48, .25); }
+.rooms { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.room { position: relative; cursor: pointer; border-radius: 12px; transition: transform .2s, opacity .2s, box-shadow .2s; }
+.room:hover { transform: translateY(-2px); box-shadow: 0 0 0 2px rgba(201, 165, 76, .7); }
+.room.focus { box-shadow: 0 0 0 3px var(--dorado); }
+.room.dim { opacity: .55; }
+.room-svg { display: block; width: 100%; height: auto; }
+.room-tag { position: absolute; top: 1.5%; left: 5%; display: inline-flex; align-items: center; gap: 5px; background: rgba(10, 23, 48, .9); color: #fff; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 7px; letter-spacing: .2px; }
+.room-count { position: absolute; top: 8%; right: 7%; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--dorado); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; border: 2px solid #fff; }
+.room-pill { position: absolute; left: 47%; top: 22%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; background: #fff; color: var(--texto); font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; box-shadow: 0 2px 6px rgba(0,0,0,.18); white-space: nowrap; }
+.room-pill.entrada-pill { left: 50%; top: 31%; font-weight: 500; color: var(--texto-2); }
+.working-bar { width: 22px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--dorado) 40%, #E9D9AE 40%); background-size: 200% 100%; animation: wbar 1s linear infinite; }
+@keyframes wbar { to { background-position: -100% 0; } }
+.bubble, .done-card { position: absolute; left: 50%; bottom: 82%; transform: translateX(-50%); z-index: 3; width: max(180px, 92%); background: #fff; border-radius: 12px; padding: 8px 10px; font-size: 12px; color: var(--texto); box-shadow: 0 8px 22px rgba(0,0,0,.28); line-height: 1.35; }
+.bubble::after, .done-card::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: #fff; transform: translateX(-50%) rotate(45deg); }
+.b-head { display: flex; align-items: center; gap: 5px; font-weight: 600; margin-bottom: 3px; font-size: 11.5px; }
+.b-head em { font-style: normal; font-size: 10px; letter-spacing: .6px; color: var(--dorado); background: var(--dorado-claro); padding: 1px 6px; border-radius: 4px; }
+.b-head time { margin-left: auto; color: var(--texto-2); font-weight: 400; font-size: 10.5px; }
+.done-card { text-align: center; border: 2px solid var(--dorado); }
+.done-card small { display: block; color: var(--verde); font-weight: 700; font-size: 10px; letter-spacing: .8px; }
+.done-card b { display: block; font-size: 14px; color: var(--azul); margin: 2px 0; }
+.done-card span { display: block; font-size: 11px; color: var(--texto-2); }
+.avatar.working .bob { animation: bob .5s ease-in-out infinite alternate; }
+.glow { animation: glow 1.2s ease-in-out infinite alternate; }
+@keyframes glow { to { fill: #6E95D1; } }
+.o-banner { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 4; background: #fff; color: var(--azul); font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,.3); white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
+.o-hint { text-align: center; font-size: 12px; color: var(--texto-2); margin-top: 8px; }
+.flyer { position: fixed; z-index: 50; font-size: 22px; pointer-events: none; transition: transform 1.1s cubic-bezier(.5, -0.3, .4, 1.2); margin: -12px 0 0 -12px; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
+
+.o-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.stat-card { background: var(--blanco); border: 1px solid var(--borde); border-radius: 14px; padding: 10px; box-shadow: var(--sombra); }
+.stat-card b { display: block; font-size: 24px; color: var(--azul); font-variant-numeric: tabular-nums; }
+.stat-card small { font-size: 11px; color: var(--texto-2); line-height: 1.2; display: block; }
+.stat-card.accent b { color: var(--dorado); }
+.working-now { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--texto-2); justify-content: flex-end; }
+.fy { width: 100%; display: flex; gap: 10px; align-items: flex-start; text-align: left; background: var(--blanco); border: 1px solid var(--borde); border-radius: 12px; padding: 9px 10px; margin-bottom: 8px; font: inherit; cursor: pointer; color: var(--texto); }
+.fy:hover { border-color: var(--dorado); }
+.fy.urgent { border-color: #F2B8B5; background: #FFF8F7; }
+.fy-main { flex: 1; min-width: 0; }
+.fy-main b { display: block; font-size: 16px; color: var(--azul); }
+.fy-main small { display: block; font-size: 12.5px; color: var(--texto); }
+.fy-main em { display: block; font-style: normal; font-size: 11.5px; color: var(--texto-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tu-ok { font-size: 10px; font-weight: 700; letter-spacing: .5px; background: var(--dorado-claro); color: var(--dorado); border-radius: 6px; padding: 3px 6px; white-space: nowrap; }
+.tu-ok.red { background: #FBE9E7; color: var(--rojo); }
+.scans-card .scan-btn { width: 100%; margin-bottom: 6px; text-align: left; }
+.finding { border: 1px solid var(--borde); border-radius: 12px; padding: 10px; margin-top: 10px; }
+.finding.done { opacity: .6; }
+.finding b { display: block; font-size: 14px; }
+.finding small { display: block; color: var(--texto-2); font-size: 12px; margin-bottom: 4px; }
+.finding p { margin: 6px 0; font-size: 13px; }
+.tab-n { background: var(--dorado); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 10px; }
+
+@media (max-width: 1180px) {
+  .o-grid { grid-template-columns: minmax(0, 1fr) 280px; }
+  .o-left { grid-column: 1 / -1; order: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .o-grid { grid-template-columns: minmax(0, 1fr); }
+  .o-left { grid-template-columns: 1fr; order: 3; }
+  .o-right { order: 2; }
+  .o-center { order: 1; }
+  .stage2 { padding: 56px 8px 8px; border-radius: 16px; margin: 0 -8px; }
+  .rooms { gap: 8px; }
+  .room-tag { font-size: 9.5px; padding: 2px 6px; }
+  .room-pill { font-size: 10px; padding: 2px 7px; }
+  .bubble, .done-card { font-size: 10.5px; width: 100%; padding: 6px 8px; }
+  .chip-total { display: none; }
+  .o-head h1 { font-size: 24px; }
+}
+
 </style>
 
   <header class="topbar">
@@ -363,9 +464,9 @@ details.manual summary { cursor: pointer; font-weight: 600; color: var(--azul); 
   <main id="view"></main>
 
   <nav class="tabbar" id="tabbar">
-    <button data-view="hoy" class="active"><span>☀️</span>Hoy</button>
+    <button data-view="agencia" class="active"><span>✦</span>Oficina</button>
+    <button data-view="hoy"><span>☀️</span>Hoy</button>
     <button data-view="tablero"><span>▦</span>Tablero</button>
-    <button data-view="agencia"><span>✦</span>Oficina</button>
     <button data-view="repo"><span>🗂️</span>Repositorio</button>
     <button data-view="correo"><span>✉️</span>Correo</button>
   </nav>
@@ -488,7 +589,7 @@ details.manual summary { cursor: pointer; font-weight: 600; color: var(--azul); 
     googleClientId: '', delegate: ''
   });
   let logos = store.get('logos', []); // [{name, project, dataUrl}]
-  const ui = { view: 'hoy', filterProject: '', search: '', agent: 'comunicado', mailLabel: null };
+  const ui = { view: 'agencia', filterProject: '', search: '', agent: 'comunicado', mailLabel: null };
   const saveTasks = () => { store.set('tasks', tasks); pushTasks(); };
 
   // ---------------------------------------------------------------- Modo publicado en claude.ai
@@ -567,16 +668,21 @@ details.manual summary { cursor: pointer; font-weight: 600; color: var(--azul); 
         sync.tasks = m; sync.ready = true;
         if (same) return;
         tasks = next; store.set('tasks', tasks);
-        if (first) pushTasks();
+        if (first) { pushTasks(); setTimeout(dailySummary, 800); }
         softRender();
       }, e => { clearTimeout(timer); dbFail(e); });
       db.doc('meta/log').onSnapshot(s => {
         const items = s.exists ? (s.data().items || []) : [];
         office.log = JSON.parse(JSON.stringify(items));
-        if (ui.view === 'agencia') { renderLog(); }
+        if (ui.view === 'agencia') renderOfficeSide();
       }, dbFail);
       db.doc('meta/config').onSnapshot(s => {
         if (s.exists && Array.isArray(s.data().projects) && s.data().projects.length) { projects = [...s.data().projects]; store.set('projects', projects); }
+      }, dbFail);
+      db.collection('scans').onSnapshot(snap => {
+        snap.docs.forEach(d => { office.scans[d.id] = JSON.parse(JSON.stringify(d.data())); });
+        store.set('office.scans', office.scans);
+        if (ui.view === 'agencia') refreshOffice();
       }, dbFail);
       db.collection('logos').onSnapshot(snap => {
         logos = snap.docs.map(d => ({ id: d.id, ...d.data() })).map(l => ({ ...l, dataUrl: l.url }));
@@ -1100,32 +1206,31 @@ details.manual summary { cursor: pointer; font-weight: 600; color: var(--azul); 
       name: 'Daniela', role: 'Asesora jurídica', area: 'Archivo y correo', engine: 'Claude',
       desk: [14.2, 11.4], shirt: '#5B3E8C', hair: '#2B1B12', dot: '#5B3E8C',
       bio: 'Rigurosa con los plazos. Ningún derecho de petición se vence.',
-      resp: ['Clasificar derechos de petición, tutelas y PQR', 'Calcular el plazo legal (Ley 1755 de 2015)', 'Redactar el borrador de respuesta', 'Revisar los borradores que envían los delegados', 'Señalar soportes y anexos necesarios'],
+      resp: ['Buscar en el correo los derechos de petición pendientes', 'Clasificar derechos de petición, tutelas y PQR', 'Calcular el plazo legal (Ley 1755 de 2015)', 'Redactar el borrador de respuesta', 'Revisar los borradores que envían los delegados', 'Señalar soportes y anexos necesarios'],
       tools: ['claude.messages', 'calendario.habiles'], risk: 0
     },
     disenador: {
       name: 'Mateo', role: 'Diseñador gráfico', area: 'Estudio de diseño', engine: 'ChatGPT',
       desk: [3.2, 10.6], shirt: '#C9A54C', hair: '#2A2A2A', dot: '#C9A54C',
       bio: 'Respeta los logos como ley. La IA solo pinta el fondo.',
-      resp: ['Flyers 1080×1350 para WhatsApp', 'Paleta azul, dorado y blanco', 'Logos originales sin alterar', 'Exporta PNG'],
+      resp: ['Atender tus pedidos de piezas desde la barra', 'Flyers 1080×1350 para WhatsApp', 'Paleta azul, dorado y blanco', 'Logos originales sin alterar', 'Exporta PNG'],
       tools: ['openai.images', 'canvas.compose', 'logos.read'], risk: 0
     },
     archivo: {
-      name: 'Sofía', role: 'Archivista de correo', area: 'Archivo y correo', engine: 'Gmail · solo lectura',
+      name: 'Sofía', role: 'Lectora de correo', area: 'Archivo y correo', engine: 'Gmail · solo lectura',
       desk: [11.2, 10.6], shirt: '#3E6DB5', hair: '#111111', dot: '#3E6DB5',
       bio: 'Lo lee todo y no toca nada.',
-      resp: ['Revisar carpetas por proyecto', 'Encontrar logos adjuntos', 'Convertir correos en tareas', 'Nunca envía, borra ni marca correos'],
+      resp: ['Revisar la bandeja y señalar los correos importantes', 'Sugerir qué agente debe atender cada uno', 'Revisar carpetas por proyecto', 'Convertir correos en tareas', 'Nunca envía, borra ni marca correos'],
       tools: ['gmail.readonly'], risk: 0
     },
     agenda: {
       name: 'Andrés', role: 'Agenda y recordatorios', area: 'Sala de agenda', engine: 'Calendario',
       desk: [19.6, 5.6], shirt: '#7A5F22', hair: '#4A3426', dot: '#7A5F22',
       bio: 'Puntual. Nada se te pasa.',
-      resp: ['Avisos antes de cada vencimiento', 'Enviar pendientes a Google Calendar', 'Exportar .ics con alarmas'],
+      resp: ['Detectar reuniones e invitaciones en el correo', 'Avisos antes de cada vencimiento', 'Enviar pendientes a Google Calendar', 'Exportar .ics con alarmas'],
       tools: ['notifications', 'calendar.ics'], risk: 0
     }
   };
-  const VACANTES = [[6.2, 12.4], [20.4, 11.6]];
 
   const COMUNICADO_SYSTEM = `Eres el redactor y asistente oficial de Alianza Grupo Inmobiliario (empresa de administración de propiedad horizontal en Colombia). Redactas comunicados de administración para canales de WhatsApp (formato flyer o carta digital para lectura rápida en el celular).
 Tono: cercano, amable, claro y resolutivo; genera empatía y confianza con la comunidad sin sonar frío ni rígido, manteniendo la formalidad necesaria.
@@ -1220,204 +1325,419 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       <label style="margin-top:10px">Subir logo desde el equipo<input type="file" name="logoFile" accept="image/*"></label>`;
   }
 
-  // ---------------------------------------------------------------- Oficina virtual (vista isométrica)
-  const TW = 40, TH = 20; // tamaño de baldosa isométrica
-  const P = (gx, gy, z = 0) => [(gx - gy) * TW / 2, (gx + gy) * TH / 2 - z];
-  const pts = arr => arr.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
-  const poly = (arr, fill, extra = '') => `<polygon points="${pts(arr)}" fill="${fill}" ${extra}/>`;
-  function isoBox(gx, gy, w, d, h, z0, top, left, right, extra = '') {
-    return `<g ${extra}>` +
-      poly([P(gx, gy + d, z0), P(gx + w, gy + d, z0), P(gx + w, gy + d, z0 + h), P(gx, gy + d, z0 + h)], left) +
-      poly([P(gx + w, gy, z0), P(gx + w, gy + d, z0), P(gx + w, gy + d, z0 + h), P(gx + w, gy, z0 + h)], right) +
-      poly([P(gx, gy, z0 + h), P(gx + w, gy, z0 + h), P(gx + w, gy + d, z0 + h), P(gx, gy + d, z0 + h)], top) + '</g>';
-  }
-  const ISO_FLOOR = 'matrix(0.894 0.447 -0.894 0.447 ';
-  const ISO_WALL_X = 'matrix(0.894 0.447 0 1 ';
-
-  const ROOMS = [
-    { x0: 0, y0: 0, x1: 9, y1: 7, label: 'DIRECCIÓN DE PROYECTOS', floor: '#EDF2FA' },
-    { x0: 9, y0: 0, x1: 18, y1: 7, label: 'REDACCIÓN', floor: '#F5F7FC' },
-    { x0: 0, y0: 7, x1: 9, y1: 16, label: 'ESTUDIO DE DISEÑO', floor: '#FBF7EE' },
-    { x0: 9, y0: 7, x1: 18, y1: 16, label: 'ARCHIVO Y CORREO', floor: '#F5F7FC' },
-    { x0: 18, y0: 0, x1: 24, y1: 16, label: 'SALA DE AGENDA', floor: '#EDF2FA' }
-  ];
-  const BOARD_SPOT = [4.6, 1.4];
+  // ---------------------------------------------------------------- La oficina (vista central)
+  // Cuadrícula de salas con corte frontal: cada agente en la suya, burbujas con lo que hace,
+  // "Tu equipo" + "Charla del equipo" a la izquierda y "Para vos" a la derecha.
+  const ROOM_ORDER = ['entrada', 'planificador', 'archivo', 'juridico', 'comunicado', 'correo', 'disenador', 'agenda'];
+  const ROOM_INFO = {
+    entrada: { label: 'Entrada', rug: '#C9A54C' },
+    planificador: { label: 'Coordinación', rug: '#7FA3D6' },
+    archivo: { label: 'Correo', rug: '#9CC3B4' },
+    juridico: { label: 'Jurídica', rug: '#B9A6D9' },
+    comunicado: { label: 'Comunicados', rug: '#E3C77E' },
+    correo: { label: 'Respuestas', rug: '#A9C1E8' },
+    disenador: { label: 'Diseño', rug: '#E8B9A0' },
+    agenda: { label: 'Agenda', rug: '#B7D3A0' }
+  };
 
   const office = {
-    status: {}, // key -> 'libre' | 'trabajando' | 'aprobacion'
+    status: {}, // key -> 'trabajando'
+    activity: {}, // key -> {verb, text, t}
+    flash: {}, // key -> {title, t}: tarjeta "✓ LISTO"
     results: store.get('office.results', {}),
     log: store.get('office.log', []),
-    open: null, tab: 'chat', returning: {}
+    scans: store.get('office.scans', {}),
+    open: null, tab: 'trabajo', banner: null
   };
-  const STATUS_TXT = { libre: 'Disponible', trabajando: 'Trabajando…', aprobacion: 'Esperando tu aprobación' };
-  const STATUS_DOT = { libre: '#2E7D4F', trabajando: '#C9A54C', aprobacion: '#2B5297' };
-  const agentStatus = k => office.status[k] || (office.results[k] ? 'aprobacion' : 'libre');
+  const STATUS_TXT = { libre: 'Al día', trabajando: 'Trabajando…', aprobacion: 'Espera tu OK', bandeja: 'Pendiente' };
+  const STATUS_DOT = { libre: '#2E7D4F', trabajando: '#C9A54C', aprobacion: '#2B5297', bandeja: '#95762F' };
+  function agentStatus(k) {
+    if (office.status[k]) return 'trabajando';
+    if (office.results[k] || tasks.some(t => t.agent === k && t.status === 'review')) return 'aprobacion';
+    if (queueOf(k).length) return 'bandeja';
+    return 'libre';
+  }
+  const openFindings = k => ((office.scans[k] || {}).items || []).filter(i => !i.done && !i.dismissed && (k !== 'juridico' || i.requiereRespuesta !== false));
 
-  function logEvent(agent, text, ok = true) {
-    office.log.unshift({ t: Date.now(), agent, text, ok });
+  function logEvent(agent, text, ok = true, to = null) {
+    office.log.unshift({ t: Date.now(), agent, text, ok, to });
     office.log = office.log.slice(0, 60);
     store.set('office.log', office.log);
     if (HOST.db) { const items = JSON.parse(JSON.stringify(office.log)); sync.queue = sync.queue.then(() => HOST.db.doc('meta/log').set({ items }).catch(dbFail)); }
   }
   function saveResults() {
-    // Las imágenes ocupan mucho; se guarda solo el texto.
     const slim = Object.fromEntries(Object.entries(office.results).map(([k, r]) => [k, r.type === 'image' ? { ...r, dataUrl: null } : r]));
     store.set('office.results', slim);
   }
-
-  function avatarSvg(a, key, [sx, sy]) {
-    const st = agentStatus(key);
-    const nameW = a.name.length * 7 + 26;
-    return `<g class="avatar ${st === 'trabajando' ? 'working' : ''}" data-agent="${key}" style="transform:translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px)">
-      <ellipse cx="0" cy="0" rx="8" ry="4" fill="rgba(26,56,103,.18)"/>
-      <g class="bob">
-        <rect x="-4.5" y="-11" width="9" height="11" rx="3" fill="#24324F"/>
-        <rect x="-6.5" y="-25" width="13" height="16" rx="5.5" fill="${a.shirt}"/>
-        <circle cx="0" cy="-30.5" r="5.6" fill="#E9C6A1"/>
-        <path d="M-5.8 -31 a5.8 5.8 0 0 1 11.6 0 q-5.8 -3 -11.6 0z" fill="${a.hair}"/>
-      </g>
-      <g class="pill" transform="translate(${-nameW / 2},-58)">
-        <rect width="${nameW}" height="18" rx="9" fill="#fff" stroke="${key === office.open ? BRAND.dorado : '#D7E0EE'}" stroke-width="${key === office.open ? 2 : 1}"/>
-        <circle cx="10" cy="9" r="3.6" fill="${STATUS_DOT[st]}"/>
-        <text x="18" y="12.6" font-size="10.5" font-weight="600" fill="#14213D">${esc(a.name)}</text>
-        ${(() => { const n = queueOf(key).length + tasks.filter(t => t.agent === key && t.status === 'review').length; return n ? `<g transform="translate(${nameW - 2},1)"><circle r="7.5" fill="${BRAND.dorado}" stroke="#fff" stroke-width="1.5"/><text y="3.4" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">${n}</text></g>` : ''; })()}
-      </g>
-    </g>`;
+  function saveScan(k) {
+    store.set('office.scans', office.scans);
+    if (HOST.db) { const data = JSON.parse(JSON.stringify(office.scans[k])); sync.queue = sync.queue.then(() => HOST.db.doc('scans/' + k).set(data).catch(dbFail)); }
   }
-
-  function deskSvg([dx, dy], screen = '#0F1E3A') {
-    return isoBox(dx, dy, 1.8, 0.9, 12, 0, '#FFFFFF', '#E3E9F3', '#CBD6E8') +
-      isoBox(dx + 0.55, dy + 0.12, 0.75, 0.12, 11, 12, '#33415E', '#1C2742', screen) +
-      isoBox(dx + 0.65, dy + 1.15, 0.55, 0.55, 7, 0, '#3E6DB5', '#2B5297', '#1A3867');
-  }
-  const seatOf = ([dx, dy]) => [dx + 0.92, dy + 1.45];
-  function plantSvg(gx, gy) {
-    const [x, y] = P(gx + 0.25, gy + 0.25, 8);
-    return isoBox(gx, gy, 0.5, 0.5, 8, 0, '#E7DCC2', '#C9B68A', '#B39C66') +
-      `<circle cx="${x}" cy="${y - 8}" r="9" fill="#3C8D5A"/><circle cx="${x - 4}" cy="${y - 14}" r="6" fill="#4FA66D"/>`;
-  }
-
-  function sceneSvg() {
-    const items = []; // [profundidad, svg]
-    let floor = '';
-    ROOMS.forEach(r => {
-      floor += poly([P(r.x0, r.y0), P(r.x1, r.y0), P(r.x1, r.y1), P(r.x0, r.y1)], r.floor, 'stroke="#DCE5F2" stroke-width="1"');
-      const [lx, ly] = P(r.x0 + 0.5, r.y1 - 0.6);
-      floor += `<text transform="${ISO_FLOOR}${lx.toFixed(1)} ${ly.toFixed(1)})" font-size="9.5" letter-spacing="2.4" font-weight="600" fill="#8DA2C4">${r.label}</text>`;
-    });
-    // Paredes del fondo
-    const WH = 54;
-    let walls = poly([P(0, 0), P(24, 0), P(24, 0, WH), P(0, 0, WH)], '#F4F7FC', 'stroke="#C9D7EC"') +
-      poly([P(0, 0), P(0, 16), P(0, 16, WH), P(0, 0, WH)], '#EAF0F9', 'stroke="#C9D7EC"') +
-      `<polyline points="${pts([P(0, 16, WH), P(0, 0, WH), P(24, 0, WH)])}" fill="none" stroke="${BRAND.dorado}" stroke-width="2"/>`;
-    // Centro de misiones (pantalla en la pared)
-    walls += poly([P(1.6, 0, 14), P(7.6, 0, 14), P(7.6, 0, 46), P(1.6, 0, 46)], '#0F1E3A', `stroke="${BRAND.dorado}" stroke-width="1.5"`);
-    const [tx, ty] = P(1.9, 0, 40);
-    walls += `<text transform="${ISO_WALL_X}${tx.toFixed(1)} ${ty.toFixed(1)})" font-size="6.5" letter-spacing="1.6" font-weight="700" fill="#E9D9AE">CENTRO DE MISIONES</text>`;
-    const live = office.log.slice(0, 3);
-    live.forEach((e, i) => {
-      const [mx, my] = P(1.9, 0, 32 - i * 7);
-      walls += `<text transform="${ISO_WALL_X}${mx.toFixed(1)} ${my.toFixed(1)})" font-size="4.6" fill="${e.ok ? '#9FC3F2' : '#F2B8B5'}">${esc((e.ok ? '✓ ' : '! ') + e.text.slice(0, 46))}</text>`;
-    });
-    if (!live.length) {
-      const [mx, my] = P(1.9, 0, 32);
-      walls += `<text transform="${ISO_WALL_X}${mx.toFixed(1)} ${my.toFixed(1)})" font-size="4.6" fill="#9FC3F2">Sin misiones aún. Toca un agente.</text>`;
-    }
-    // Calendario de pared en la sala de agenda
-    walls += poly([P(19, 0, 16), P(23, 0, 16), P(23, 0, 44), P(19, 0, 44)], '#FFFFFF', 'stroke="#C9D7EC"') +
-      poly([P(19, 0, 38), P(23, 0, 38), P(23, 0, 44), P(19, 0, 44)], BRAND.azul);
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
-      const busy = tasks.some(t => t.status !== 'done' && t.due) && (i + j * 4) % 3 === 0;
-      walls += poly([P(19.3 + i * 0.95, 0, 33 - j * 6), P(19.95 + i * 0.95, 0, 33 - j * 6), P(19.95 + i * 0.95, 0, 29 - j * 6), P(19.3 + i * 0.95, 0, 29 - j * 6)], busy ? '#E9D9AE' : '#EDF2FA');
-    }
-    // Tabiques de vidrio con huecos de puerta
-    const glass = (a, b) => poly([P(...a), P(...b), P(...b, 26), P(...a, 26)], 'rgba(43,82,151,.07)', 'stroke="#9DB8E2" stroke-width=".8"') +
-      `<line x1="${P(...a, 26)[0]}" y1="${P(...a, 26)[1]}" x2="${P(...b, 26)[0]}" y2="${P(...b, 26)[1]}" stroke="#5F8BD0" stroke-width="1.6"/>`;
-    const partitions = [
-      [[9, 0], [9, 2.2], 2.2], [[9, 3.8], [9, 9.2], 9.2], [[9, 10.8], [9, 16], 16],
-      [[0, 7], [3.4, 7], 7], [[5.2, 7], [12.4, 7], 7], [[14.2, 7], [18, 7], 7],
-      [[18, 0], [18, 3.2], 3.2], [[18, 4.8], [18, 11.2], 11.2], [[18, 12.8], [18, 16], 16]
-    ];
-    partitions.forEach(([a, b, d]) => items.push([a[0] + d - 0.2, glass(a, b)]));
-    // Mobiliario
-    Object.values(AGENTS).forEach(a => items.push([a.desk[0] + a.desk[1] + 1, deskSvg(a.desk, '#2B5297')]));
-    VACANTES.forEach(v => items.push([v[0] + v[1] + 1, deskSvg(v)]));
-    for (let i = 0; i < 6; i++) items.push([16 + 8.4 + i * 1.1 + 1, isoBox(16.6, 8.4 + i * 1.1, 0.9, 0.9, 30, 0, '#2B3E66', '#1A2A4A', '#20365F')]);
-    items.push([20 + 9 + 2, isoBox(19.6, 8.6, 2.6, 1.4, 10, 0, '#FFFFFF', '#E3E9F3', '#CBD6E8')]); // mesa de reunión
-    items.push([22.6 + 14 + 1, isoBox(19.4, 14, 3.2, 1, 9, 0, '#D9C690', '#B39C66', BRAND.dorado)]); // sofá
-    [[0.4, 6.1], [8.2, 0.4], [17.2, 0.4], [0.4, 15.2], [8.2, 15.2], [23.2, 0.4], [17.2, 15.2]].forEach(([x, y]) => items.push([x + y + 0.5, plantSvg(x, y)]));
-    // Vacantes
-    VACANTES.forEach(v => {
-      const [sx, sy] = P(...seatOf(v));
-      items.push([v[0] + v[1] + 2, `<g class="pill vacante" transform="translate(${sx - 32},${sy - 40})"><rect width="64" height="18" rx="9" fill="#fff" stroke="#D7E0EE" stroke-dasharray="3 2"/><text x="10" y="12.6" font-size="10" fill="#8DA2C4">+ Vacante</text></g>`]);
-    });
-    // Agentes
-    Object.entries(AGENTS).forEach(([k, a]) => {
-      const atBoard = office.returning[k] || agentStatus(k) === 'trabajando';
-      const pos = atBoard ? BOARD_SPOT : seatOf(a.desk);
-      const home = seatOf(a.desk);
-      items.push([home[0] + home[1] + 2, avatarSvg(a, k, P(...pos))]);
-    });
-    items.sort((a, b) => a[0] - b[0]);
-    return `<svg viewBox="-345 -95 845 520" class="office-svg" role="img" aria-label="Oficina virtual de la Coordinación de Proyectos">
-      ${floor}${walls}${items.map(i => i[1]).join('')}</svg>`;
-  }
+  function setBanner(text) { office.banner = { text, t: Date.now() }; renderBanner(); setTimeout(renderBanner, 6000); }
 
   const live = () => hasClaude();
   const hhmmss = t => new Date(t).toLocaleTimeString('es-CO', { hour12: false, timeZone: TZ });
+  const hhmm = t => new Date(t).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+  const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'ahora' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; };
+  const who = k => k === 'vos' ? 'ti' : (AGENTS[k]?.name || 'Entrada');
+
+  // ---- Dibujo de una sala (SVG, vista frontal con corte)
+  function wallDecor(k) {
+    const books = (x, y, w) => { let s = `<rect x="${x}" y="${y}" width="${w}" height="56" rx="2" fill="#7A5A3A"/>`; for (let r = 0; r < 3; r++) { s += `<rect x="${x + 3}" y="${y + 17 + r * 18}" width="${w - 6}" height="2.5" fill="#5E4329"/>`; for (let i = 0; i < Math.floor((w - 8) / 6); i++) s += `<rect x="${x + 4 + i * 6}" y="${y + 4 + r * 18}" width="4.5" height="${11 + ((i * 7 + r) % 4)}" fill="${['#1A3867', '#95762F', '#C9D6EA', '#2B5297', '#E9D9AE'][(i + r) % 5]}"/>`; } return s; };
+    const screen = (x, y, w, h, lines = 4, col = '#9FC3F2') => { let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#0F1E3A" stroke="#95762F" stroke-width="1.2"/>`; for (let i = 0; i < lines; i++) s += `<rect x="${x + 6}" y="${y + 7 + i * 7}" width="${(w - 12) * (0.4 + ((i * 37) % 50) / 100)}" height="2.4" rx="1" fill="${i === 0 ? '#E9D9AE' : col}" opacity=".9"/>`; return s; };
+    switch (k) {
+      case 'entrada': return screen(196, 22, 80, 44, 4) + `<rect x="44" y="30" width="52" height="40" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/><path d="M48 36 L70 52 L92 36" stroke="#95762F" stroke-width="2" fill="none"/>`;
+      case 'planificador': { let s = `<rect x="186" y="20" width="96" height="58" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/>`; [['#E9D9AE', 194, 28], ['#C9D6EA', 216, 28], ['#E9D9AE', 238, 28], ['#C9D6EA', 260, 30], ['#C9D6EA', 194, 52], ['#E9D9AE', 220, 52], ['#C9D6EA', 246, 50]].forEach(([c, x, y]) => s += `<rect x="${x}" y="${y}" width="17" height="17" fill="${c}"/>`); return s + books(40, 22, 62); }
+      case 'archivo': { let s = ''; for (let i = 0; i < 3; i++) s += `<rect x="${40 + i * 24}" y="30" width="21" height="54" rx="2" fill="#2B3E66"/><rect x="${46 + i * 24}" y="40" width="9" height="2.5" fill="#C9D6EA"/><rect x="${46 + i * 24}" y="58" width="9" height="2.5" fill="#C9D6EA"/>`; return s + screen(200, 22, 78, 46, 5); }
+      case 'juridico': return books(36, 22, 74) + books(210, 22, 70) + `<g transform="translate(160 30)" stroke="#95762F" stroke-width="2" fill="none"><path d="M0 0 V26 M-14 6 H14"/><path d="M-14 6 L-20 18 H-8 Z M14 6 L8 18 H20 Z" fill="#E9D9AE"/></g>`;
+      case 'comunicado': return screen(40, 22, 86, 50, 5) + `<rect x="204" y="26" width="64" height="20" rx="10" fill="#FFFFFF"/><rect x="214" y="50" width="56" height="18" rx="9" fill="#E9D9AE"/>`;
+      case 'correo': return books(40, 22, 64) + screen(204, 24, 72, 42, 4);
+      case 'disenador': { let s = ''; ['#1A3867', '#95762F', '#FFFFFF', '#2B5297', '#E9D9AE'].forEach((c, i) => s += `<rect x="${42 + i * 15}" y="28" width="12" height="34" fill="${c}" stroke="#C9D6EA"/>`); return s + `<rect x="206" y="22" width="68" height="50" rx="2" fill="#FFFFFF" stroke="#95762F"/><circle cx="240" cy="42" r="12" fill="#C9D6EA"/><rect x="216" y="58" width="48" height="5" fill="#1A3867"/>`; }
+      case 'agenda': { let s = `<rect x="188" y="20" width="90" height="60" rx="3" fill="#FFFFFF" stroke="#C9D6EA"/><rect x="188" y="20" width="90" height="12" rx="3" fill="#1A3867"/>`; for (let r = 0; r < 3; r++) for (let c = 0; c < 6; c++) s += `<rect x="${193 + c * 14}" y="${37 + r * 13}" width="11" height="10" fill="${(r * 6 + c) % 5 === 1 ? '#E9D9AE' : '#EDF2FA'}"/>`; return s + books(40, 22, 60); }
+    }
+    return '';
+  }
+  function avatarG(a, k) {
+    const working = office.status[k];
+    return `<g class="avatar ${working ? 'working' : ''}"><g class="bob">
+      <rect x="138" y="96" width="24" height="34" rx="10" fill="${a.shirt}"/>
+      <circle cx="150" cy="88" r="10" fill="#E9C6A1"/>
+      <path d="M139.6 87 a10.4 10.4 0 0 1 20.8 0 q-10.4 -5.5 -20.8 0z" fill="${a.hair}"/></g></g>`;
+  }
+  function roomSvg(k) {
+    const a = AGENTS[k], rug = ROOM_INFO[k].rug, working = !!office.status[k];
+    let floor = '';
+    for (let i = 1; i < 10; i++) floor += `<line x1="${24 + i * 27.2}" y1="96" x2="${4 + i * 31.2}" y2="216" stroke="#CDAE7E" stroke-width="1"/>`;
+    const desk = `<polygon points="112,132 214,132 224,144 102,144" fill="#FFFFFF"/><rect x="102" y="144" width="122" height="24" fill="#E3E9F3"/><rect x="106" y="168" width="5" height="14" fill="#C9D6EA"/><rect x="215" y="168" width="5" height="14" fill="#C9D6EA"/>
+      <rect x="176" y="106" width="38" height="25" rx="2" fill="#1C2742"/><rect x="179" y="109" width="32" height="19" rx="1" fill="${working ? '#3E6DB5' : '#24324F'}" class="${working ? 'glow' : ''}"/><rect x="192" y="131" width="6" height="3" fill="#1C2742"/>`;
+    let people = '';
+    if (k === 'entrada') {
+      people = `<polygon points="96,128 230,128 240,140 86,140" fill="#FFFFFF"/><rect x="86" y="140" width="154" height="30" fill="#E3E9F3"/><rect x="86" y="140" width="154" height="5" fill="#95762F"/>
+        <rect x="120" y="116" width="26" height="14" rx="2" fill="#FFFFFF" stroke="#C9D6EA"/><rect x="150" y="112" width="26" height="18" rx="2" fill="#FFFFFF" stroke="#C9D6EA"/><path d="M150 112 L163 122 L176 112" stroke="#95762F" fill="none"/>`;
+    } else {
+      people = `<rect x="134" y="92" width="32" height="38" rx="7" fill="#2B5297"/>` + avatarG(a, k) + desk;
+    }
+    const extra = k === 'agenda' ? `<ellipse cx="258" cy="178" rx="26" ry="9" fill="#FFFFFF" stroke="#C9D6EA"/>` : k === 'disenador' ? `<polygon points="244,150 270,150 262,196 252,196" fill="#B39C66"/>` : `<rect x="236" y="168" width="44" height="22" rx="8" fill="#D9C690"/><rect x="236" y="160" width="44" height="12" rx="6" fill="#C9B68A"/>`;
+    return `<svg viewBox="0 0 320 220" class="room-svg" aria-hidden="true">
+      <rect x="0" y="0" width="320" height="220" rx="12" fill="#0E1D38"/>
+      <polygon points="24,10 296,10 296,96 24,96" fill="#E4EBF6"/>
+      <polygon points="4,4 24,10 24,96 4,216" fill="#C2D0E6"/><polygon points="316,4 296,10 296,96 316,216" fill="#C2D0E6"/>
+      <polygon points="24,96 296,96 316,216 4,216" fill="#E6D0A8"/>${floor}
+      <line x1="24" y1="96" x2="296" y2="96" stroke="#B89A6A" stroke-width="2"/>
+      ${wallDecor(k)}
+      <ellipse cx="160" cy="176" rx="104" ry="30" fill="${rug}" opacity=".6"/>
+      ${extra}
+      <rect x="28" y="168" width="18" height="16" rx="2" fill="#C9B68A"/><circle cx="37" cy="158" r="12" fill="#3C8D5A"/><circle cx="31" cy="150" r="7" fill="#4FA66D"/>
+      ${people}
+    </svg>`;
+  }
+
+  function roomHtml(k) {
+    const isEntrada = k === 'entrada';
+    const a = AGENTS[k];
+    const today = todayStr();
+    const n = isEntrada ? tasks.filter(t => t.created && new Date(t.created).toLocaleDateString('en-CA', { timeZone: TZ }) === today).length
+      : queueOf(k).length + tasks.filter(t => t.agent === k && t.status === 'review').length + openFindings(k).length;
+    const act = office.activity[k], fl = office.flash[k] && Date.now() - office.flash[k].t < 9000 ? office.flash[k] : null;
+    const st = isEntrada ? 'libre' : agentStatus(k);
+    let bubble = '';
+    if (!isEntrada && office.status[k] && act) bubble = `<div class="bubble"><div class="b-head"><span class="dot" style="background:${a.shirt}"></span>${esc(a.name)} <em>${esc(act.verb)}</em><time>${esc(ago(act.t))}</time></div>${esc(act.text)}</div>`;
+    else if (fl) bubble = `<div class="done-card"><small>✓ LISTO · ${esc(a.name.toUpperCase())}</small><b>${esc(fl.title)}</b>${fl.sub ? `<span>${esc(fl.sub)}</span>` : ''}</div>`;
+    return `<div class="room ${office.open === k ? 'focus' : ''} ${office.open && office.open !== k ? 'dim' : ''}" data-room="${k}" style="--rug:${ROOM_INFO[k].rug}">
+      ${roomSvg(k)}
+      <span class="room-tag"><span class="dot" style="background:${isEntrada ? BRAND.dorado : a.shirt}"></span>${esc(ROOM_INFO[k].label)}</span>
+      ${n ? `<span class="room-count">${n}</span>` : ''}
+      ${isEntrada ? `<span class="room-pill entrada-pill">${n ? `${n} entraron hoy` : 'Deja aquí un pendiente'}</span>` : `<span class="room-pill"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${esc(a.name)}${office.status[k] ? '<span class="working-bar"></span>' : ''}</span>`}
+      ${bubble}
+    </div>`;
+  }
+
+  // ---- Columnas
+  function teamHtml() {
+    return Object.entries(AGENTS).map(([k, a]) => {
+      const st = agentStatus(k), q = queueOf(k).length, f = openFindings(k).length, act = office.activity[k];
+      const sub = office.status[k] && act ? `${act.verb.toLowerCase()} · ${act.text}` : st === 'aprobacion' ? 'Tiene algo listo para ti' : q ? `${q} en su bandeja` : f ? `${f} hallazgos en el correo` : a.role;
+      return `<button class="team-row ${office.open === k ? 'active' : ''}" data-agent="${k}">
+        <span class="p-avatar sm" style="background:${a.shirt}">${esc(a.name[0])}</span>
+        <span class="tr-main"><b>${esc(a.name)}</b><small>${esc(sub)}</small></span>
+        <span class="tr-st" style="color:${STATUS_DOT[st]}"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${STATUS_TXT[st]}</span>
+      </button>`;
+    }).join('');
+  }
+  function chatHtml() {
+    const rows = office.log.slice(0, 9);
+    return rows.length ? rows.map(e => `<div class="chat-row ${e.ok ? '' : 'err'}">
+        <span class="p-avatar xs" style="background:${AGENTS[e.agent]?.shirt || BRAND.dorado}">${esc((AGENTS[e.agent]?.name || 'E')[0])}</span>
+        <div><b>${esc(who(e.agent))}${e.to ? ' → ' + esc(who(e.to)) : ''}</b><time>${esc(hhmm(e.t))}</time><p>${esc(e.text)}</p></div></div>`).join('')
+      : '<p class="sub">Aquí verás cómo se pasan el trabajo entre ellos.</p>';
+  }
+  function forYouItems() {
+    const items = [], today = todayStr();
+    tasks.filter(t => t.status === 'review').forEach(t => items.push({ k: t.agent, big: AGENTS[t.agent]?.name || 'Revisión', title: t.title, sub: t.project, ok: true, open: t.agent, task: t.id }));
+    const pet = openFindings('juridico');
+    if (pet.length) {
+      const next = pet.filter(p => p.vence).sort((a, b) => a.vence.localeCompare(b.vence))[0];
+      items.push({ k: 'juridico', big: `${pet.length} ${pet.length === 1 ? 'petición' : 'peticiones'}`, title: 'sin responder en el correo', sub: next ? `La más próxima vence ${fmtDate(next.vence)}` : 'Daniela las revisó', urgent: next && next.vence <= addBusinessDays(today, 3), open: 'juridico', tab: 'hallazgos' });
+    }
+    const imp = openFindings('archivo');
+    if (imp.length) items.push({ k: 'archivo', big: `${imp.length} correos`, title: 'importantes por atender', sub: imp[0].subject, open: 'archivo', tab: 'hallazgos' });
+    const meet = openFindings('agenda');
+    if (meet.length) items.push({ k: 'agenda', big: `${meet.length} reuniones`, title: 'detectadas en el correo', sub: meet[0].titulo || meet[0].subject, open: 'agenda', tab: 'hallazgos' });
+    const overdue = tasks.filter(t => t.status !== 'done' && t.due && t.due < today);
+    if (overdue.length) items.push({ k: 'planificador', big: `${overdue.length} vencidas`, title: overdue[0].title, sub: 'Valeria sugiere reprogramar o delegar', urgent: true, open: 'planificador' });
+    const dueToday = tasks.filter(t => t.status !== 'done' && t.due === today);
+    if (dueToday.length) items.push({ k: 'agenda', big: `${dueToday.length} para hoy`, title: dueToday[0].title, sub: dueToday[0].project, open: 'agenda' });
+    return items;
+  }
+  function forYouHtml() {
+    const items = forYouItems();
+    return items.length ? items.map((it, i) => `<button class="fy ${it.urgent ? 'urgent' : ''}" data-fy="${i}">
+        <span class="p-avatar sm" style="background:${AGENTS[it.k]?.shirt || BRAND.azul}">${esc((AGENTS[it.k]?.name || 'A')[0])}</span>
+        <span class="fy-main"><b>${esc(it.big)}</b><small>${esc(it.title)}</small>${it.sub ? `<em>${esc(it.sub)}</em>` : ''}</span>
+        ${it.ok ? '<span class="tu-ok">TU OK</span>' : it.urgent ? '<span class="tu-ok red">URGENTE</span>' : ''}
+      </button>`).join('') : '<p class="sub">Nada te espera. El equipo está al día.</p>';
+  }
+  function statsHtml() {
+    const done = tasks.filter(t => t.status === 'done' && t.doneAt > Date.now() - 7 * 864e5).length;
+    const working = Object.keys(office.status).length;
+    const ok = tasks.filter(t => t.status === 'review').length;
+    return `<div class="stat-card"><b>${done}</b><small>resueltas esta semana</small></div>
+      <div class="stat-card"><b>${tasks.filter(t => t.status !== 'done').length}</b><small>pendientes</small></div>
+      <div class="stat-card ${ok ? 'accent' : ''}"><b>${ok}</b><small>esperan tu OK</small></div>
+      <div class="working-now"><span class="dot" style="background:${working ? '#C9A54C' : '#2E7D4F'}"></span>${working ? `${working} trabajando` : 'Equipo disponible'}</div>`;
+  }
+  function chipsHtml() {
+    const total = tasks.filter(t => t.status !== 'done').length;
+    return `<button class="room-chip ${!office.open ? 'active' : ''}" data-chip="">Toda la oficina <b>${Object.keys(AGENTS).length}</b></button>` +
+      ROOM_ORDER.filter(k => k !== 'entrada').map(k => {
+        const n = queueOf(k).length + tasks.filter(t => t.agent === k && t.status === 'review').length + openFindings(k).length;
+        return `<button class="room-chip ${office.open === k ? 'active' : ''}" data-chip="${k}"><span class="dot" style="background:${AGENTS[k].shirt}"></span>${esc(ROOM_INFO[k].label)} <b>${n}</b></button>`;
+      }).join('') + `<span class="chip-total">${total} pendientes en total</span>`;
+  }
 
   views.agencia = () => `
-    <div class="office">
-      <div class="office-hud">
-        <div class="hud-card"><span class="hud-mark">A</span><div><strong>Alianza Office</strong><small>Coordinación de Proyectos · Bogotá</small></div></div>
-        <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : 'Modo demo · agrega claves en Ajustes'}</div>
+    <div class="office2">
+      <header class="o-head">
+        <div><h1>La oficina</h1><p class="sub">Siete agentes, cada uno en lo suyo. Lo que necesita tu aprobación te espera en «Para ti».</p></div>
+        <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : 'Conectando IA…'}</div>
+      </header>
+      <nav class="room-chips" id="chips"></nav>
+      <div class="o-grid">
+        <aside class="o-left">
+          <section class="o-card"><h3>Tu equipo <span>${Object.keys(AGENTS).length}</span></h3><div id="team"></div></section>
+          <section class="o-card"><h3>Charla del equipo</h3><div id="talk"></div></section>
+        </aside>
+        <section class="o-center">
+          <div class="stage2" id="stage"><div class="o-banner" id="banner" hidden></div><div class="rooms" id="rooms"></div></div>
+          <div class="o-hint">Toca una sala para ver el trabajo de su agente.</div>
+        </section>
+        <aside class="o-right">
+          <section class="o-stats" id="stats"></section>
+          <section class="o-card"><h3>✓ Para ti</h3><div id="foryou"></div></section>
+          <section class="o-card scans-card"><h3>Revisar el correo</h3>
+            ${['archivo', 'juridico', 'agenda'].map(k => `<button class="btn btn-ghost btn-sm scan-btn" data-scan="${k}">${esc(SCANS[k].button)}</button>`).join('')}
+            <p class="sub" style="margin:6px 0 0;font-size:12px">Solo lectura: nada se envía ni se marca.</p>
+          </section>
+        </aside>
       </div>
-      <div class="office-stage" id="stage">${sceneSvg()}</div>
-      <div class="agent-strip" id="strip"></div>
       <aside class="agent-panel" id="panel" hidden></aside>
-      <div class="mission-log" id="mlog"></div>
     </div>`;
 
-  function renderStrip() {
-    $('#strip').innerHTML = Object.entries(AGENTS).map(([k, a]) => `
-      <button class="strip-chip ${k === office.open ? 'active' : ''}" data-agent="${k}">
-        <span class="dot" style="background:${STATUS_DOT[agentStatus(k)]}"></span>${esc(a.name)}<small>${esc(a.role)}</small>
-      </button>`).join('');
-    $('#strip').querySelectorAll('[data-agent]').forEach(b => b.onclick = () => openAgent(b.dataset.agent));
+  function renderBanner() {
+    const el = $('#banner'); if (!el) return;
+    const b = office.banner;
+    if (b && Date.now() - b.t < 6000) { el.hidden = false; el.textContent = b.text; } else el.hidden = true;
   }
-  function renderLog() {
-    const el = $('#mlog'); if (!el) return;
-    el.innerHTML = office.log.slice(0, 6).map(e => `<div class="log-row ${e.ok ? '' : 'err'}"><time>${hhmmss(e.t)}</time><span>${e.ok ? '✔' : '⚠'}</span><b>${esc(AGENTS[e.agent]?.name || '')}</b> ${esc(e.text)}</div>`).join('')
-      || '<div class="log-row"><time>--:--:--</time><span>·</span> Aquí verás cada misión del equipo.</div>';
-  }
-  function renderScene() {
-    const st = $('#stage'); if (!st) return;
-    st.innerHTML = sceneSvg();
-    st.querySelectorAll('.avatar').forEach(g => g.onclick = () => openAgent(g.dataset.agent));
-    // Animación de caminata: del puesto al centro de misiones y de regreso.
-    Object.entries(AGENTS).forEach(([k, a]) => {
-      const g = st.querySelector(`.avatar[data-agent="${k}"]`);
-      if (office.returning[k]) {
-        delete office.returning[k];
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          const [x, y] = P(...seatOf(a.desk)); g.style.transform = `translate(${x}px,${y}px)`;
-        }));
-      } else if (office.walkTo === k) {
-        office.walkTo = null;
-        const [hx, hy] = P(...seatOf(a.desk)); g.style.transition = 'none'; g.style.transform = `translate(${hx}px,${hy}px)`;
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          g.style.transition = ''; const [x, y] = P(...BOARD_SPOT); g.style.transform = `translate(${x}px,${y}px)`;
-        }));
-      }
+  function renderRooms() {
+    const el = $('#rooms'); if (!el) return;
+    el.innerHTML = ROOM_ORDER.map(roomHtml).join('');
+    el.querySelectorAll('[data-room]').forEach(r => r.onclick = () => {
+      const k = r.dataset.room;
+      if (k === 'entrada') { const ta = $('#cmdbar textarea'); if (ta) { ta.focus(); ta.scrollIntoView({ block: 'center' }); } return; }
+      openAgent(k);
     });
-    renderStrip();
   }
-  function refreshOffice() { if (ui.view !== 'agencia') return; renderScene(); renderLog(); const p = $('#panel'); if (office.open && !(p && p.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderPanel(); }
+  function renderOfficeSide() {
+    const set = (id, html) => { const e = $(id); if (e) e.innerHTML = html; };
+    set('#chips', chipsHtml()); set('#team', teamHtml()); set('#talk', chatHtml()); set('#stats', statsHtml()); set('#foryou', forYouHtml());
+    document.querySelectorAll('#chips [data-chip]').forEach(b => b.onclick = () => { const k = b.dataset.chip; if (!k) { office.open = null; renderPanel(); renderOffice(); } else openAgent(k, true); });
+    document.querySelectorAll('#team [data-agent]').forEach(b => b.onclick = () => openAgent(b.dataset.agent, true));
+    const items = forYouItems();
+    document.querySelectorAll('#foryou [data-fy]').forEach(b => b.onclick = () => { const it = items[Number(b.dataset.fy)]; openAgent(it.open, true, it.tab); });
+    document.querySelectorAll('[data-scan]').forEach(b => b.onclick = () => runScan(b.dataset.scan));
+  }
+  function renderOffice() { renderRooms(); renderOfficeSide(); renderBanner(); }
+  const renderLog = () => { if (ui.view === 'agencia') renderOfficeSide(); };
+  function renderScene() { if (ui.view === 'agencia') renderOffice(); }
+  function refreshOffice() {
+    if (ui.view !== 'agencia') return;
+    renderOffice();
+    const p = $('#panel'); if (office.open && !(p && p.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) renderPanel();
+  }
 
-  function openAgent(k) {
-    office.open = office.open === k ? null : k;
-    office.tab = 'chat';
-    renderScene(); renderPanel();
+  // Papel que vuela de una sala a otra cuando un agente le pasa trabajo a otro.
+  function flyBetween(from, to) {
+    if (ui.view !== 'agencia') return;
+    const a = document.querySelector(`[data-room="${from}"]`), b = document.querySelector(`[data-room="${to}"]`);
+    if (!a || !b || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    const f = document.createElement('div'); f.className = 'flyer'; f.textContent = '📄';
+    f.style.left = (ra.left + ra.width / 2) + 'px'; f.style.top = (ra.top + ra.height / 2) + 'px';
+    document.body.appendChild(f);
+    requestAnimationFrame(() => requestAnimationFrame(() => { f.style.transform = `translate(${rb.left - ra.left}px, ${rb.top - ra.top}px) scale(1.1)`; }));
+    setTimeout(() => f.remove(), 1300);
+  }
+
+  // ---------------------------------------------------------------- Revisiones del correo (solo lectura)
+  const SCANS = {
+    archivo: {
+      button: '✉️ Sofía: correos importantes', verb: 'REVISA', text: 'la bandeja de entrada',
+      query: 'in:inbox newer_than:4d -category:promotions -category:social', view: 'THREAD_VIEW_SUMMARY',
+      prompt: () => `Eres Sofía, archivista de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (administración de propiedad horizontal en Colombia). Recibes una lista de hilos recientes de la bandeja de entrada (solo metadatos). Elige los que requieren acción o atención del coordinador, máximo 8, ordenados por importancia. Ignora notificaciones automáticas, reacciones, publicidad y correos solo informativos sin acción. Proyectos válidos: ${projects.join(', ')}.
+Responde SOLO JSON: {"items":[{"id":"id del hilo","importancia":"alta|media","motivo":"por qué importa, una frase","accion":"qué conviene hacer, una frase","agente":"correo|juridico|comunicado|disenador|agenda|planificador","proyecto":"uno de la lista o General / AGI"}]}`
+    },
+    juridico: {
+      button: '⚖️ Daniela: derechos de petición', verb: 'BUSCA', text: 'derechos de petición y tutelas',
+      query: '("derecho de petición" OR "derechos de petición" OR "derecho de peticion" OR tutela OR PQR OR PQRS OR petición OR label:derechos-de-petición) newer_than:120d', view: 'THREAD_VIEW_MINIMAL',
+      prompt: () => `Eres Daniela, asesora jurídica de la Coordinación de Proyectos de Alianza Grupo Inmobiliario (propiedad horizontal, Colombia). Recibes hilos de correo (metadatos y un fragmento). Identifica SOLO derechos de petición, tutelas, PQR o requerimientos formales dirigidos a la administración o al conjunto; descarta lo demás. El campo "enviadoPorNosotros" indica si en el hilo hay un mensaje enviado desde esta cuenta. Proyectos válidos: ${projects.join(', ')}.
+Responde SOLO JSON: {"items":[{"id":"id del hilo","tipo":"Derecho de petición|Tutela|PQR|Requerimiento","plazoDias":10|15|30|null,"peticionario":"quién lo presenta","asunto":"resumen corto","requiereRespuesta":true|false,"motivo":"estado y recomendación en una frase","proyecto":"uno de la lista o General / AGI"}]}. Plazos Ley 1755 de 2015: 15 días hábiles en general, 10 para documentos o información, 30 para consultas; tutela: null.`
+    },
+    agenda: {
+      button: '📅 Andrés: reuniones e invitaciones', verb: 'BUSCA', text: 'reuniones e invitaciones',
+      query: '(invitación OR invitation OR reunión OR visita OR comité OR asamblea OR "Google Meet") newer_than:14d', view: 'THREAD_VIEW_SUMMARY',
+      prompt: () => `Eres Andrés, encargado de la agenda de la Coordinación de Proyectos de Alianza Grupo Inmobiliario. Hoy es ${todayStr()}. De estos hilos, identifica reuniones, visitas, comités o asambleas con fecha futura o de hoy. Proyectos válidos: ${projects.join(', ')}.
+Responde SOLO JSON: {"items":[{"id":"id del hilo","titulo":"nombre corto del evento","fecha":"YYYY-MM-DD","hora":"HH:MM o null","lugar":"lugar o enlace, corto","proyecto":"uno de la lista o General / AGI"}]}`
+    }
+  };
+  const ymd = iso => iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }) : '';
+  function businessDaysLeft(due) {
+    const t = todayStr(); if (due <= t) return due === t ? 0 : -1;
+    let n = 0, d = t; while (d < due && n < 60) { d = addBusinessDays(d, 1); n++; } return n;
+  }
+
+  async function runScan(k) {
+    const sc = SCANS[k], a = AGENTS[k];
+    if (!HOST.mcp) return toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'La revisión automática del correo funciona en la versión publicada en claude.ai.');
+    if (!hasClaude()) return toast('Claude aún no está disponible.');
+    if (office.status[k]) return;
+    office.status[k] = 'trabajando'; office.activity[k] = { verb: sc.verb, text: sc.text, t: Date.now() };
+    logEvent(k, `Revisando ${sc.text}`);
+    refreshOffice();
+    try {
+      const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query: sc.query, pageSize: 25, view: sc.view });
+      const threads = (r.payload && r.payload.threads) || [];
+      const rows = threads.map(th => {
+        const ms = th.messages || [], first = ms[0] || {}, last = ms[ms.length - 1] || {};
+        const nm = (m) => ((m.addressDisplayNames || []).find(x => x.emailAddress === m.sender) || {}).displayName || m.sender || '';
+        return { id: th.id, asunto: last.subject || first.subject || '', de: nm(first), ultimoDe: nm(last), primerMensaje: ymd(first.date), ultimoMensaje: ymd(last.date), mensajes: th.messageCount || ms.length,
+          enviadoPorNosotros: ms.some(m => (m.labelIds || []).includes('SENT')), sinLeer: ms.some(m => (m.labelIds || []).includes('UNREAD')), fragmento: decodeEntities(last.snippet || first.snippet || '').slice(0, 260), url: th.viewUrl || '' };
+      });
+      let found = [];
+      if (rows.length) {
+        const raw = await askClaude(sc.prompt(), JSON.stringify(rows.map(({ url, ...x }) => x)));
+        const json = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+        const byId = Object.fromEntries(rows.map(x => [x.id, x]));
+        const prev = Object.fromEntries(((office.scans[k] || {}).items || []).map(i => [i.id, i]));
+        found = (json.items || []).filter(i => byId[i.id]).map(i => {
+          const row = byId[i.id], it = { ...i, subject: row.asunto, from: row.de, date: row.ultimoMensaje, url: row.url, sent: row.enviadoPorNosotros, snippet: row.fragmento };
+          if (k === 'juridico') { it.radicado = row.primerMensaje; if (i.plazoDias) { it.vence = addBusinessDays(row.primerMensaje, Number(i.plazoDias)); it.dias = businessDaysLeft(it.vence); } }
+          if (prev[i.id]) { it.done = prev[i.id].done; it.dismissed = prev[i.id].dismissed; }
+          return it;
+        });
+        if (k === 'juridico') found.sort((x, y) => (x.vence || '9').localeCompare(y.vence || '9'));
+      }
+      office.scans[k] = { at: Date.now(), items: found };
+      saveScan(k); store.set('scanOk', true);
+      const pend = found.filter(i => k !== 'juridico' || i.requiereRespuesta !== false).length;
+      const msg = k === 'juridico' ? `Encontré ${found.length} ${found.length === 1 ? 'petición' : 'peticiones'}; ${pend} requieren respuesta` : k === 'agenda' ? `Encontré ${found.length} reuniones o visitas` : `Encontré ${found.length} correos que requieren atención`;
+      logEvent(k, msg, true, 'vos');
+      office.flash[k] = { title: msg, t: Date.now() };
+      if (office.open !== k) { office.open = k; }
+      office.tab = 'hallazgos';
+    } catch (e) {
+      const m = e?.code ? mcpMsg(e) : (e?.message || 'No se pudo revisar el correo.');
+      logEvent(k, 'No pude revisar el correo: ' + m, false, 'vos'); toast(m);
+    }
+    delete office.status[k];
+    refreshOffice(); renderPanel();
+  }
+
+  async function startFromFinding(k, i) {
+    const it = ((office.scans[k] || {}).items || [])[i]; if (!it) return;
+    const th = { id: it.id, subject: it.subject, from: it.from, date: it.date, snippet: it.snippet, url: it.url };
+    toast('Leyendo el correo…');
+    let text;
+    try { text = await threadText(th); } catch (e) { return toast(e?.code ? mcpMsg(e) : e.message); }
+    const project = projects.includes(it.proyecto) ? it.proyecto : matchProject(text);
+    if (k === 'agenda') {
+      tasks.push({ id: uid(), created: Date.now(), status: 'todo', agent: 'agenda', project, title: it.titulo || it.subject, priority: 'media', due: it.fecha || '', time: it.hora || '', remind: it.fecha ? '1440' : '', notes: `${it.lugar || ''}\nCorreo: ${it.url}`.trim(), steps: DEFAULT_STEPS.agenda, input: it.subject });
+      saveTasks(); logEvent('agenda', `Agendó «${it.titulo || it.subject}»`, true, 'vos');
+    } else if (k === 'juridico') {
+      const t = { id: uid(), created: Date.now(), status: 'todo', agent: 'juridico', project, title: `Responder ${it.tipo || 'petición'}: ${it.asunto || it.subject}`.slice(0, 110), priority: 'alta', mode: 'borrador', received: it.radicado || todayStr(),
+        input: text, steps: DEFAULT_STEPS.juridico, notes: `${it.motivo || ''}\nCorreo: ${it.url}`.trim(), auto: true, due: '', time: '', remind: '2880' };
+      const dias = Number(it.plazoDias) || 15;
+      t.legalDue = addBusinessDays(t.received, dias); t.due = addBusinessDays(t.received, Math.max(1, dias - 2));
+      tasks.push(t); saveTasks();
+      logEvent('juridico', `Empiezo el borrador de «${t.title}»`, true, 'vos');
+      startNext('juridico');
+    } else {
+      const created = await dispatch(text, { auto: true, project: it.proyecto && projects.includes(it.proyecto) ? it.proyecto : '' });
+      created.forEach(t => { t.notes = `${t.notes || ''}\nCorreo: ${it.url}`.trim(); flyBetween('archivo', t.agent); });
+      saveTasks();
+    }
+    it.done = true; saveScan(k);
+    refreshOffice(); renderPanel();
+  }
+
+  function findingsHtml(k) {
+    const sc = office.scans[k];
+    const head = `<div class="toolbar"><button class="btn btn-gold btn-sm" id="scanNow" ${office.status[k] ? 'disabled' : ''}>${office.status[k] ? 'Revisando…' : 'Revisar ahora'}</button>
+      <span class="sub" style="margin:0">${sc ? 'Última revisión ' + esc(ago(sc.at)) : 'Aún no he revisado el correo.'}</span></div>`;
+    if (!sc || !sc.items.length) return head + `<p class="sub">${sc ? 'No encontré nada pendiente.' : 'Toca «Revisar ahora»: leo tu correo en solo lectura y te digo qué hay.'}</p>`;
+    const cards = sc.items.map((it, i) => {
+      if (it.dismissed) return '';
+      let meta = '', btn = '';
+      if (k === 'juridico') {
+        const urg = it.dias != null && it.dias <= 3;
+        meta = `<span class="chip ${it.requiereRespuesta === false ? 'green' : urg ? 'red' : 'gold'}">${esc(it.tipo || 'Petición')}${it.requiereRespuesta === false ? ' · respondida' : ''}</span>
+          ${it.vence ? `<span class="chip ${urg ? 'red' : ''}">Vence ${esc(fmtDate(it.vence))}${it.dias != null ? ` · ${it.dias < 0 ? 'vencida' : it.dias + ' días hábiles'}` : ''}</span>` : ''}
+          ${it.radicado ? `<span class="chip">Recibida ${esc(fmtDate(it.radicado))}</span>` : ''}`;
+        btn = it.requiereRespuesta === false ? '' : `<button class="btn btn-primary btn-sm" data-start="${i}" ${it.done ? 'disabled' : ''}>${it.done ? '✓ En borrador' : 'Iniciar respuesta'}</button>`;
+      } else if (k === 'agenda') {
+        meta = `<span class="chip gold">${esc(it.fecha ? fmtDate(it.fecha) : 'sin fecha')}${it.hora ? ' · ' + esc(it.hora) : ''}</span>${it.lugar ? `<span class="chip">${esc(it.lugar)}</span>` : ''}`;
+        btn = `<button class="btn btn-primary btn-sm" data-start="${i}" ${it.done ? 'disabled' : ''}>${it.done ? '✓ Agendada' : 'Agregar a la agenda'}</button>`;
+      } else {
+        meta = `<span class="chip ${it.importancia === 'alta' ? 'red' : 'gold'}">${it.importancia === 'alta' ? 'Importante' : 'Atender'}</span>${AGENTS[it.agente] ? `<span class="chip">Sugiero: ${esc(AGENTS[it.agente].name)}</span>` : ''}`;
+        btn = `<button class="btn btn-primary btn-sm" data-start="${i}" ${it.done ? 'disabled' : ''}>${it.done ? '✓ Enviado al equipo' : 'Enviar al equipo'}</button>`;
+      }
+      return `<div class="finding ${it.done ? 'done' : ''}">
+        <b>${esc(k === 'agenda' ? (it.titulo || it.subject) : k === 'juridico' ? (it.asunto || it.subject) : it.subject)}</b>
+        <small>${esc(k === 'juridico' && it.peticionario ? it.peticionario : it.from)} · ${esc(it.proyecto || '')}</small>
+        <div class="t-meta">${meta}</div>
+        <p>${esc(it.motivo || it.accion || '')}${it.accion && it.motivo ? ' ' + esc(it.accion) : ''}</p>
+        <div class="toolbar">${btn}${it.url ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(it.url)}">Abrir en Gmail</a>` : ''}<button class="btn btn-ghost btn-sm" data-dismiss="${i}">Descartar</button></div>
+      </div>`;
+    }).join('');
+    return head + cards;
+  }
+  function bindFindings(k, panel) {
+    const sn = $('#scanNow', panel); if (sn) sn.onclick = () => runScan(k);
+    panel.querySelectorAll('[data-start]').forEach(b => b.onclick = () => { b.disabled = true; startFromFinding(k, Number(b.dataset.start)); });
+    panel.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { office.scans[k].items[Number(b.dataset.dismiss)].dismissed = true; saveScan(k); renderPanel(); renderOfficeSide(); renderRooms(); });
+  }
+
+  // Revisión automática: solo si ya diste permiso a Gmail antes y la última revisión es vieja.
+  function autoScans() {
+    if (office.autoRunning || !HOST.mcp || !hasClaude() || !store.get('scanOk', false)) return;
+    const old = k => !office.scans[k] || Date.now() - office.scans[k].at > 3 * 3600e3;
+    office.autoRunning = true;
+    (async () => { for (const k of ['juridico', 'archivo', 'agenda']) if (old(k)) await runScan(k); office.autoRunning = false; })();
+  }
+
+  function openAgent(k, force = false, tab = null) {
+    office.open = !force && office.open === k ? null : k;
+    office.tab = tab || (SCANS[k] && openFindings(k).length && !queueOf(k).length && !office.results[k] ? 'hallazgos' : 'trabajo');
+    renderOffice(); renderPanel();
   }
 
   function renderPanel() {
@@ -1426,32 +1746,38 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     if (!k) { panel.hidden = true; return; }
     const a = AGENTS[k], st = agentStatus(k);
     panel.hidden = false;
-    const tabs = ['actividad', 'chat', 'perfil'].map(t => `<button class="ptab ${office.tab === t ? 'active' : ''}" data-tab="${t}">${{ actividad: 'Actividad', chat: 'Chat', perfil: 'Perfil' }[t]}</button>`).join('');
+    const tabNames = { trabajo: 'Trabajo', hallazgos: 'En el correo', actividad: 'Actividad', perfil: 'Perfil' };
+    const tabList = ['trabajo', ...(SCANS[k] ? ['hallazgos'] : []), 'actividad', 'perfil'];
+    if (!tabList.includes(office.tab)) office.tab = 'trabajo';
+    const tabs = tabList.map(t => `<button class="ptab ${office.tab === t ? 'active' : ''}" data-tab="${t}">${tabNames[t]}${t === 'hallazgos' && openFindings(k).length ? ` <b class="tab-n">${openFindings(k).length}</b>` : ''}</button>`).join('');
     let body = '';
     if (office.tab === 'perfil') {
       body = `<p class="bio">${esc(a.bio)}</p>
         <h4>Responsabilidades</h4><ul>${a.resp.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
         <h4>Herramientas</h4><div class="tools">${a.tools.map(t => `<code>${esc(t)}</code>`).join('')}</div>
-        <h4>Autonomía</h4><p class="sub">Riesgo máximo sin aprobación: <b>${a.risk} / 4</b>. No envía, publica ni modifica nada sin tu visto bueno.</p>
-        <h4>Motor</h4><span class="chip ${a.engine === 'ChatGPT' ? 'gold' : ''}">${esc(a.engine)}</span>`;
+        <h4>Autonomía</h4><p class="sub">No envía, publica ni modifica nada sin tu visto bueno.</p>
+        <h4>Motor</h4><span class="chip ${a.engine === 'ChatGPT' ? 'gold' : ''}">${esc(HOST_FRAME && a.engine === 'ChatGPT' ? 'Plantilla institucional' : a.engine)}</span>`;
     } else if (office.tab === 'actividad') {
-      const mine = office.log.filter(e => e.agent === k);
-      body = mine.length ? mine.map(e => `<div class="log-row ${e.ok ? '' : 'err'}"><time>${hhmmss(e.t)}</time><span>${e.ok ? '✔' : '⚠'}</span>${esc(e.text)}</div>`).join('') : '<div class="empty">Aún no tiene misiones.</div>';
+      const mine = office.log.filter(e => e.agent === k || e.to === k);
+      body = mine.length ? mine.map(e => `<div class="log-row ${e.ok ? '' : 'err'}"><time>${hhmmss(e.t)}</time><span>${e.ok ? '✔' : '⚠'}</span>${e.agent !== k ? `<b>${esc(who(e.agent))}:</b> ` : ''}${esc(e.text)}</div>`).join('') : '<div class="empty">Aún no tiene actividad.</div>';
+    } else if (office.tab === 'hallazgos') {
+      body = findingsHtml(k);
     } else {
       body = chatBody(k);
     }
     panel.innerHTML = `
       <header>
         <div class="p-avatar" style="background:${a.shirt}">${esc(a.name[0])}</div>
-        <div><strong>${esc(a.name)}</strong><small>${esc(a.role)} · ${esc(a.area)}</small>
+        <div><strong>${esc(a.name)}</strong><small>${esc(a.role)} · ${esc(ROOM_INFO[k].label)}</small>
           <span class="p-status"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${STATUS_TXT[st]}</span></div>
         <button class="p-close" aria-label="Cerrar">×</button>
       </header>
       <nav class="ptabs">${tabs}</nav>
       <div class="p-body workspace">${body}</div>`;
-    panel.querySelector('.p-close').onclick = () => { office.open = null; renderPanel(); renderScene(); };
+    panel.querySelector('.p-close').onclick = () => { office.open = null; renderPanel(); renderOffice(); };
     panel.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { office.tab = b.dataset.tab; renderPanel(); });
-    if (office.tab === 'chat') bindChat(k, panel);
+    if (office.tab === 'trabajo') bindChat(k, panel);
+    if (office.tab === 'hallazgos') bindFindings(k, panel);
   }
 
   function chatBody(k) {
@@ -1518,7 +1844,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
         const titulo = (r.text.match(/T[ÍI]TULO:\s*(.+)/i) || [])[1] || '';
         const texto = ((r.text.match(/MENSAJE:\s*([\s\S]*?)(?:\n\s*FIRMA:|REGISTRO DE TRAZABILIDAD)/i) || [])[1] || r.text).trim();
         store.set('agent.disenador', { ...store.get('agent.disenador', {}), project: r.project, titulo, texto });
-        logEvent('comunicado', `Entregó el texto a Mateo para la pieza de ${r.project}`);
+        logEvent('comunicado', `Te paso el texto para la pieza de ${r.project}`, true, 'disenador'); flyBetween('comunicado', 'disenador');
         openAgent('disenador');
       };
       $('#rApprove', panel).onclick = async () => {
@@ -1567,11 +1893,19 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     }
     // La misión queda en el tablero: En curso → En revisión (tu aprobación) → Hecho.
     task.status = 'doing'; saveTasks();
-    office.status[k] = 'trabajando'; office.walkTo = k;
-    logEvent(k, `Inició misión «${brief}»`);
+    office.status[k] = 'trabajando';
+    office.activity[k] = { verb: { comunicado: 'ESCRIBE', correo: 'ESCRIBE', juridico: fd.modo === 'revision' ? 'REVISA' : 'REDACTA', disenador: 'DISEÑA', planificador: 'PLANEA' }[k] || 'TRABAJA', text: brief, t: Date.now() };
+    logEvent(k, `Empiezo «${brief}»`);
     refreshOffice();
     try {
       const type = k === 'disenador' ? 'image' : 'text';
+      if (type === 'image' && fd.request && !fd.texto && hasClaude()) {
+        office.activity[k] = { verb: 'PIENSA', text: 'el texto de la pieza', t: Date.now() }; refreshOffice();
+        const raw = await askClaude(COMUNICADO_SYSTEM + '\nAhora solo necesito el texto de un flyer. Responde SOLO JSON: {"titulo":"máximo 6 palabras","texto":"2 a 4 líneas cortas, puede usar viñetas •"}', `Proyecto: ${project}\nPedido: ${fd.request}`);
+        try { const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); fd.titulo = j.titulo; fd.texto = j.texto; } catch { fd.titulo = brief; fd.texto = fd.request; }
+        office.activity[k] = { verb: 'DISEÑA', text: fd.titulo, t: Date.now() }; refreshOffice();
+      }
+      if (type === 'image' && !fd.texto) { fd.titulo = fd.titulo || brief; fd.texto = fd.request || ''; }
       const content = type === 'image' ? await runDesigner(fd) : await runWriter(k, fd);
       const repoId = uid();
       await repo.put({ id: repoId, date: Date.now(), agent: k, project, type, title: brief, content, taskId: task.id, status: 'borrador' })
@@ -1580,25 +1914,21 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       saveResults();
       if (type === 'text') task.notes = `${task.notes || ''}\n\n${content.slice(0, 2000)}`.trim();
       task.status = 'review'; task.auto = false; saveTasks();
-      logEvent(k, `Misión completada: «${brief}» · espera tu aprobación`);
+      logEvent(k, `Listo: «${brief}». Espera tu aprobación`, true, 'vos');
+      office.flash[k] = { title: brief, sub: 'Espera tu OK', t: Date.now() };
+      setTimeout(() => refreshOffice(), 9500);
     } catch (err) {
       task.status = 'todo'; task.auto = false; task.notes = `${task.notes || ''}\n\nNo se completó: ${err.message}`; saveTasks();
       logEvent(k, `No pudo completar «${brief}»: ${err.message}`, false);
       toast('⚠️ ' + err.message);
     }
     delete office.status[k];
-    office.returning[k] = true;
     refreshOffice();
     if (['hoy', 'tablero', 'repo'].includes(ui.view)) renderView();
     startNext(k);
   }
 
-  views.agencia.after = root => {
-    renderScene(); renderLog(); renderPanel();
-    const stage = $('#stage', root);
-    // En el celular la oficina se desplaza horizontalmente; se centra al abrir.
-    stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
-  };
+  views.agencia.after = () => { renderOffice(); renderPanel(); autoScans(); };
 
   function runWriter(key, fd) {
     const fecha = new Date().toLocaleDateString('es-CO', { timeZone: TZ });
@@ -1777,10 +2107,12 @@ Hoy es ${todayStr()}.`;
       }
       if (t.due && !t.remind) t.remind = agent === 'agenda' ? '1440' : agent === 'juridico' ? '2880' : '1440';
       tasks.push(t); created.push(t);
-      logEvent('planificador', `Asignó «${t.title}» a ${AGENTS[agent].name}`);
+      logEvent('planificador', `Te asigno «${t.title}»`, true, agent);
     }
     saveTasks();
     ui.receipts = created.map(t => t.id);
+    if (created.length) setBanner(`Entra: «${created[0].title}» → ${AGENTS[created[0].agent].name}${created.length > 1 ? ` y ${created.length - 1} más` : ''}`);
+    created.forEach((t, i) => setTimeout(() => { flyBetween('entrada', 'planificador'); setTimeout(() => flyBetween('planificador', t.agent), 700); }, i * 400));
     toast(`Valeria repartió ${created.length} ${created.length === 1 ? 'pendiente' : 'pendientes'} (${via}).`);
     for (const t of created) if (t.auto) startNext(t.agent);
     return created;
@@ -1794,7 +2126,7 @@ Hoy es ${todayStr()}.`;
     if (k === 'comunicado') return { project: t.project, tema: t.title, idea: t.input };
     if (k === 'correo') return { project: t.project, mail: t.input, idea: (t.steps || []).join('; ') || 'Proponer la respuesta adecuada' };
     if (k === 'juridico') return { project: t.project, modo: t.mode || 'borrador', peticion: t.input, borrador: '', radicado: t.received || todayStr() };
-    if (k === 'disenador') return { project: t.project, titulo: t.title, texto: t.input, escena: '', useAI: hasOpenAI() };
+    if (k === 'disenador') return { project: t.project, titulo: '', texto: '', request: t.input || t.title, escena: '', useAI: hasOpenAI() };
     return { idea: t.input, taskTitle: t.title, taskMode: true, project: t.project };
   }
 
@@ -1809,7 +2141,7 @@ Hoy es ${todayStr()}.`;
     return `<form id="cmdForm" class="cmd">
         <div class="cmd-main">
           <span class="cmd-ico">✦</span>
-          <textarea name="text" rows="1" placeholder="${innerWidth < 600 ? 'Deja un pendiente o pega un correo…' : 'Deja aquí un pendiente o pega un correo… Valeria lo asigna al agente indicado'}"></textarea>
+          <textarea name="text" rows="1" placeholder="${innerWidth < 600 ? 'Deja un pendiente o un correo…' : 'Deja aquí un pendiente o pega un correo… Valeria lo asigna al agente indicado'}"></textarea>
           <button class="btn btn-gold" id="cmdSend">Enviar</button>
         </div>
         <div class="cmd-extra">
@@ -2060,6 +2392,7 @@ Hoy es ${todayStr()}.`;
   function setView(v) { ui.view = v; ui.receipts = []; render(); window.scrollTo(0, 0); }
   function renderView() {
     const root = $('#view');
+    root.classList.toggle('wide', ui.view === 'agencia');
     root.innerHTML = views[ui.view]();
     views[ui.view].after?.(root);
     document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === ui.view));
@@ -2080,6 +2413,7 @@ Hoy es ${todayStr()}.`;
   }
   render();
   checkReminders();
+  function dailySummary() {
   if (store.get('lastDaily', '') !== todayStr()) {
     const open = tasks.filter(t => t.status !== 'done'), td = todayStr();
     const msg = `${open.length} pendientes · ${open.filter(t => t.due === td).length} vencen hoy · ${open.filter(t => t.due && t.due < td).length} vencidas · ${tasks.filter(t => t.status === 'review').length} esperan tu aprobación`;
@@ -2087,6 +2421,8 @@ Hoy es ${todayStr()}.`;
     setTimeout(() => toast('☀️ ' + msg), 600);
     store.set('lastDaily', todayStr());
   }
+  }
+  if (!HOST_FRAME) dailySummary();
   setInterval(checkReminders, 30000);
   bootHost();
   if (!HOST_FRAME && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
