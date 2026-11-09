@@ -666,7 +666,7 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     inbox: store.get('office.inbox', null),
     refs: store.get('office.refs', []),
     pending: [],
-    open: null, tab: 'trabajo', banner: null,
+    open: null, tab: 'trabajo', banner: null, size: 'normal', width: store.get('panel.width', 460),
     work: { coordinacion: {}, piezas: {}, textos: {}, peticiones: store.get('pet.work', { step: 1, form: { modo: 'responder' }, docs: [] }), bandeja: {} }
   };
   const STATUS_TXT = { libre: 'Al día', trabajando: 'Trabajando…', aprobacion: 'Espera tu OK', pregunta: 'Te pregunta' };
@@ -684,6 +684,15 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
     if (HOST.db) { const items = JSON.parse(JSON.stringify(office.log)); sync.queue = sync.queue.then(() => HOST.db.doc('meta/log').set({ items }).catch(dbFail)); }
   }
   function savePet() { store.set('pet.work', office.work.peticiones); }
+  const petImages = []; // imágenes de esta sesión (no se guardan): {name, image, kind}
+  function parsePastDate(text) {
+    const n = norm(text); if (!n.trim()) return '';
+    if (/\bayer\b/.test(n)) return addDays(todayStr(), -1);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text.trim())) return text.trim();
+    let d = parseWhen(text).due;
+    if (d && d > todayStr() && !/\bhoy\b/.test(n)) d = (Number(d.slice(0, 4)) - 1) + d.slice(4);
+    return d;
+  }
   function setBanner(text) { office.banner = { text, t: Date.now() }; renderBanner(); setTimeout(renderBanner, 6000); }
   const live = () => hasClaude();
   const hhmmss = t => new Date(t).toLocaleTimeString('es-CO', { hour12: false, timeZone: TZ });
@@ -723,7 +732,16 @@ REGISTRO DE TRAZABILIDAD DE PIEZA
       const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = LIBS.pdf[1];
       const pdf = await lib.getDocument({ data: buf }).promise; let out = '';
       for (let i = 1; i <= Math.min(pdf.numPages, 40); i++) { const pg = await pdf.getPage(i); const c = await pg.getTextContent(); out += c.items.map(x => x.str + (x.hasEOL ? '\n' : ' ')).join('') + '\n\n'; }
-      return { name, text: out.trim() || '(El PDF no tiene texto seleccionable: puede ser un escaneo.)' };
+      if (out.trim().length > 40) return { name, text: out.trim() };
+      // PDF escaneado: se convierten las primeras páginas en imágenes para que Claude las lea.
+      const images = [];
+      for (let i = 1; i <= Math.min(pdf.numPages, 4); i++) {
+        const pg = await pdf.getPage(i), vp = pg.getViewport({ scale: 1.6 });
+        const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+        await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        images.push(await new Promise(ok => cv.toBlob(ok, 'image/jpeg', 0.85)));
+      }
+      return { name, text: '', images };
     }
     if (ext === 'docx') { await loadScript(LIBS.docx[0]); const r = await window.mammoth.extractRawText({ arrayBuffer: buf }); return { name, text: r.value }; }
     if (ext === 'xlsx' || ext === 'xls') {
@@ -961,7 +979,7 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
     const gr = $('#goRepo'); if (gr) gr.onclick = () => setView('repo');
   }
   function bindInboxCard() {
-    const r = $('#ibRefresh'); if (r) r.onclick = () => runInboxSummary();
+    const r = $('#ibRefresh'); if (r) r.onclick = () => runInboxSummary(false);
     const o = $('#ibOpen'); if (o) o.onclick = () => openAgent('bandeja', true);
     const f = $('#findMini'); if (f) f.onsubmit = e => { e.preventDefault(); const q = f.q.value.trim(); if (!q) return; office.work.bandeja.query = q; openAgent('bandeja', true); findEmail(q); };
   }
@@ -989,6 +1007,7 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
   function openAgent(k, force = false, tab = 'trabajo') {
     office.open = !force && office.open === k ? null : k;
     office.tab = tab;
+    if (office.size === 'min') office.size = 'normal';
     renderOffice(); renderPanel();
     const p = $('#panel'); if (p && !p.hidden && innerWidth < 760) p.scrollTop = 0;
   }
@@ -998,6 +1017,8 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
     if (!k) { panel.hidden = true; return; }
     const a = AGENTS[k], st = agentStatus(k);
     panel.hidden = false;
+    panel.className = `agent-panel size-${office.size}`;
+    panel.style.width = office.size === 'normal' && innerWidth > 760 ? office.width + 'px' : '';
     const tabs = [['trabajo', 'Trabajo'], ['historial', 'Entregas'], ['perfil', 'Perfil']].map(([t, l]) => `<button class="ptab ${office.tab === t ? 'active' : ''}" data-tab="${t}">${l}</button>`).join('');
     let body = '';
     if (office.tab === 'perfil') {
@@ -1013,11 +1034,26 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
         <div class="p-avatar" style="background:${a.shirt}">${esc(a.name[0])}</div>
         <div><strong>${esc(a.name)}</strong><small>${esc(a.role)}</small>
           <span class="p-status"><span class="dot" style="background:${STATUS_DOT[st]}"></span>${STATUS_TXT[st]}</span></div>
-        <button class="p-close" aria-label="Cerrar">×</button>
+        <div class="p-win">
+          <button class="win-btn" data-win="min" title="${office.size === 'min' ? 'Abrir' : 'Minimizar'}" aria-label="${office.size === 'min' ? 'Abrir' : 'Minimizar'}">${office.size === 'min' ? '▴' : '—'}</button>
+          <button class="win-btn" data-win="max" title="${office.size === 'max' ? 'Reducir' : 'Agrandar'}" aria-label="${office.size === 'max' ? 'Reducir' : 'Agrandar'}">${office.size === 'max' ? '⤡' : '⤢'}</button>
+          <button class="p-close" aria-label="Cerrar">×</button>
+        </div>
       </header>
+      ${office.size === 'normal' ? '<div class="p-resize" title="Arrastra para cambiar el ancho"></div>' : ''}
       <nav class="ptabs">${tabs}</nav>
       <div class="p-body workspace">${body}</div>`;
-    panel.querySelector('.p-close').onclick = () => { office.open = null; renderPanel(); renderOffice(); };
+    panel.querySelector('.p-close').onclick = () => { office.open = null; office.size = 'normal'; renderPanel(); renderOffice(); };
+    panel.querySelectorAll('[data-win]').forEach(b => b.onclick = e => { e.stopPropagation(); setPanelSize(b.dataset.win === 'min' ? (office.size === 'min' ? 'normal' : 'min') : (office.size === 'max' ? 'normal' : 'max')); });
+    panel.querySelector('header').onclick = e => { if (office.size === 'min' && !e.target.closest('button')) setPanelSize('normal'); };
+    const rz = panel.querySelector('.p-resize');
+    if (rz) rz.onpointerdown = e => {
+      e.preventDefault(); rz.setPointerCapture(e.pointerId);
+      const right = innerWidth - panel.getBoundingClientRect().right;
+      rz.onpointermove = ev => { office.width = Math.max(360, Math.min(innerWidth - right - 40, innerWidth - right - ev.clientX)); panel.style.width = office.width + 'px'; };
+      rz.onpointerup = () => { rz.onpointermove = null; store.set('panel.width', office.width); };
+    };
+    bindMics(panel);
     panel.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { office.tab = b.dataset.tab; renderPanel(); });
     if (office.tab === 'trabajo') WORK[k].bind(panel);
     if (office.tab === 'perfil' && k === 'peticiones') bindRefs(panel);
@@ -1028,10 +1064,41 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
     }).catch(() => {});
   }
 
+  function setPanelSize(sz) { office.size = sz; renderPanel(); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && office.size === 'max' && ui.view === 'agencia' && !$('#taskDialog').open && !$('#viewDialog').open) setPanelSize('normal'); });
+
+  // ---- Responder con voz: dictado del navegador o, si no está permitido, el micrófono del teclado.
+  const micBtn = (name, label = '🎤 Responder con voz') => `<button type="button" class="mic-btn" data-mic="${name}">${label}</button>`;
+  let rec = null;
+  function micTip(btn) {
+    let tip = btn.parentElement.querySelector('.mic-tip');
+    if (!tip) { tip = document.createElement('div'); tip.className = 'mic-tip'; btn.insertAdjacentElement('afterend', tip); }
+    tip.innerHTML = 'Aquí el navegador no permite usar el micrófono directamente. Usa el dictado de tu teclado: en el celular toca <b>🎤 en el teclado</b>; en Windows presiona <b>Win + H</b>; en Mac, la tecla <b>Fn dos veces</b>. Lo que dictes queda escrito y Daniela lo analiza.';
+  }
+  function bindMics(panel) {
+    panel.querySelectorAll('[data-mic]').forEach(btn => btn.onclick = () => {
+      const ta = panel.querySelector(`[name="${btn.dataset.mic}"]`); if (!ta) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (rec) { rec.stop(); return; }
+      ta.focus();
+      if (!SR || HOST_FRAME) return micTip(btn); // en claude.ai el micrófono no está habilitado para la página
+      const base = ta.value ? ta.value.replace(/\s*$/, ' ') : '';
+      let finalText = '';
+      rec = new SR(); rec.lang = 'es-CO'; rec.continuous = true; rec.interimResults = true;
+      btn.classList.add('rec'); btn.textContent = '● Escuchando… toca para terminar';
+      rec.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const r = ev.results[i]; if (r.isFinal) finalText += r[0].transcript + ' '; else interim += r[0].transcript; } ta.value = base + finalText + interim; };
+      rec.onerror = ev => { if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network'].includes(ev.error)) micTip(btn); };
+      rec.onend = () => { rec = null; btn.classList.remove('rec'); btn.textContent = '🎤 Responder con voz'; ta.value = (base + finalText).trim(); ta.dispatchEvent(new Event('input')); };
+      try { rec.start(); } catch { rec = null; btn.classList.remove('rec'); micTip(btn); }
+    });
+  }
+
   // Ejecuta un trabajo de un agente: estado, burbuja, registro, repositorio y "Para ti".
-  async function work(k, { verb, text, project, title, fn, saveAs = 'text', taskId = null }) {
+  async function work(k, { verb, text, project, title, fn, saveAs = 'text', taskId = null, focus = true }) {
     if (office.status[k]) { toast(`${AGENTS[k].name} ya está trabajando.`); return null; }
     office.status[k] = 'trabajando'; office.activity[k] = { verb, text, t: Date.now() };
+    // Mientras un agente trabaja, su ventana se abre en grande.
+    if (focus && ui.view === 'agencia' && k !== 'coordinacion') { office.open = k; office.tab = 'trabajo'; office.size = 'max'; renderPanel(); }
     refreshOffice();
     let out = null;
     try {
@@ -1078,7 +1145,11 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
   async function readFiles(input) {
     const out = [];
     for (const f of [...(input.files || [])]) {
-      try { out.push(await extractFile(f)); } catch (e) { toast(`${f.name}: ${e.message}`); }
+      try {
+        const x = await extractFile(f);
+        if (x.images) x.images.forEach((im, i) => out.push({ name: `${x.name} (pág. ${i + 1})`, image: im, scanned: true }));
+        else out.push(x);
+      } catch (e) { toast(`${f.name}: ${e.message}`); }
     }
     input.value = '';
     return out;
@@ -1235,6 +1306,10 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
   WORK.peticiones = {
     html() {
       const p = office.work.peticiones, f = p.form || {};
+      const docs = p.docs || [];
+      const byKind = kind => docs.map((d, i) => ({ ...d, i })).filter(d => d.kind === kind);
+      const docList = list => list.length ? `<ul class="file-list">${list.map(d => `<li>📎 ${esc(d.name)} · ${(d.text || '').length.toLocaleString('es-CO')} caracteres<button type="button" class="link-btn" data-rmdoc="${d.i}">quitar</button></li>`).join('')}</ul>` : '';
+      const imgList = kind => { const l = petImages.map((x, i) => ({ ...x, i })).filter(x => x.kind === kind); return l.length ? `<ul class="file-list">${l.map(x => `<li>🖼️ ${esc(x.name)}<button type="button" class="link-btn" data-rmimg="${x.i}">quitar</button></li>`).join('')}</ul>` : ''; };
       const steps = `<ol class="steps"><li class="${p.step === 1 ? 'on' : ''}">Cargar</li><li class="${p.step === 2 ? 'on' : ''}">Mis preguntas</li><li class="${p.step === 3 ? 'on' : ''}">Borrador</li></ol>`;
       if (p.step === 2 && p.analysis) {
         const a = p.analysis;
@@ -1243,25 +1318,30 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
           ${(a.puntos || []).length ? `<h4>Lo que solicita</h4><ol>${a.puntos.map(x => `<li>${esc(x.solicitud || x)}</li>`).join('')}</ol>` : ''}
           ${(a.vacios || []).length ? `<h4>Información que falta</h4><ul>${a.vacios.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
           <form id="wForm"><h4>Antes de redactar, respóndeme</h4>
-            ${(a.preguntas || []).map((q, i) => `<label>${i + 1}. ${esc(q.pregunta)}${q.motivo ? `<small class="q-why">${esc(q.motivo)}</small>` : ''}<textarea name="q${i}" rows="2" placeholder="Si no lo sabes, déjalo vacío y quedará como [PENDIENTE]">${esc((p.answers || {})['q' + i] || '')}</textarea></label>`).join('') || '<p class="sub">No tengo dudas; puedo generar el borrador.</p>'}
+            ${(a.preguntas || []).map((q, i) => `<label>${i + 1}. ${esc(q.pregunta)}${q.motivo ? `<small class="q-why">${esc(q.motivo)}</small>` : ''}<textarea name="q${i}" rows="2" placeholder="Si no lo sabes, déjalo vacío y quedará como [PENDIENTE]">${esc((p.answers || {})['q' + i] || '')}</textarea></label>${micBtn('q' + i)}`).join('') || '<p class="sub">No tengo dudas; puedo generar el borrador.</p>'}
+            <label class="voice-box">🎙️ Respóndeme todo de una vez (escríbelo o díctalo)<small class="q-why">Habla con naturalidad: yo identifico qué respuesta va con cada pregunta.</small><textarea name="voz" rows="4">${esc((p.answers || {}).voz || '')}</textarea></label>${micBtn('voz', '🎤 Dictar respuesta')}
             <label>¿Algo más que deba tener en cuenta?<textarea name="extra" rows="2">${esc((p.answers || {}).extra || '')}</textarea></label>
+            <h4>Documentos o imágenes adicionales</h4>
+            <p class="sub" style="margin-top:0">Agrega lo que te pedí o lo que ayude a responder: presupuestos, actas, capturas, fotos.</p>
+            <input type="file" name="fExtra" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,image/*">
+            ${docList(byKind('adicional'))}${imgList('adicional')}
+            ${petImages.length ? '<div class="notice warn">🖼️ Las imágenes se envían tal cual: tapa nombres, cédulas, firmas y teléfonos antes de subirlas.</div>' : ''}
+            ${byKind('adicional').length || petImages.some(i => i.kind === 'adicional') ? '<button type="button" class="btn btn-ghost btn-sm" id="petReanalyze">🔄 Analizar de nuevo con lo que agregué</button>' : ''}
             <div class="toolbar"><button type="button" class="btn btn-ghost" id="petBack">← Volver a los documentos</button><button class="btn btn-primary" ${office.status.peticiones ? 'disabled' : ''}>${office.status.peticiones ? 'Redactando…' : p.form.modo === 'revision' ? 'Revisar el borrador' : 'Generar borrador'}</button></div>
           </form>`;
       }
       if (p.step === 3 && p.result) {
         return steps + resultBox('peticiones', p.result) + `<div class="toolbar"><button class="btn btn-ghost btn-sm" id="petBack2">← Ajustar respuestas</button><button class="btn btn-ghost btn-sm" id="petNew">Nueva petición</button></div>`;
       }
-      const docs = p.docs || [];
-      const byKind = kind => docs.map((d, i) => ({ ...d, i })).filter(d => d.kind === kind);
-      const docList = list => list.length ? `<ul class="file-list">${list.map(d => `<li>📎 ${esc(d.name)} · ${(d.text || '').length.toLocaleString('es-CO')} caracteres<button type="button" class="link-btn" data-rmdoc="${d.i}">quitar</button></li>`).join('')}</ul>` : '';
       const hidden = docs.reduce((n, d) => n + (d.hidden || 0), 0);
       return steps + `<form id="wForm">
           <div class="seg seg-sm"><button type="button" class="${f.modo !== 'revision' ? 'active' : ''}" data-modo="responder">Responder petición</button><button type="button" class="${f.modo === 'revision' ? 'active' : ''}" data-modo="revision">Revisar borrador de un delegado</button></div>
-          <div class="row"><label>Proyecto${projSelect('project', f.project)}</label><label>Fecha de recibido<input type="date" name="radicado" value="${esc(f.radicado || '')}"></label></div>
+          <div class="row"><label>Proyecto${projSelect('project', f.project)}</label><label>Fecha de recibido<span class="date-dual"><input name="radicadoTxt" placeholder="Escríbela: 6/11/2026 o 6 de noviembre" value="${esc(f.radicadoTxt || '')}"><input type="date" name="radicado" value="${esc(f.radicado || '')}" aria-label="Elegir en el calendario"></span>${f.radicado ? `<small class="q-why">→ ${esc(fmtDate(f.radicado))}</small>` : ''}</label></div>
           <label>Derecho de petición (pégalo o adjúntalo)<textarea name="peticion" rows="4" placeholder="Pega aquí el texto de la petición">${esc(f.peticion || '')}</textarea></label>
-          <input type="file" name="fPet" accept=".pdf,.docx,.txt,.md">${docList(byKind('peticion'))}
+          <input type="file" name="fPet" accept=".pdf,.docx,.txt,.md,image/*" multiple>${docList(byKind('peticion'))}${imgList('peticion')}
           ${f.modo === 'revision' ? `<label>Borrador del delegado<textarea name="borrador" rows="4">${esc(f.borrador || '')}</textarea></label><input type="file" name="fBor" accept=".pdf,.docx,.txt,.md">${docList(byKind('borrador'))}` : ''}
-          <label>Soportes para validar (presupuestos, actas, circulares, contratos…)<input type="file" name="fSop" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls"></label>${docList(byKind('soporte'))}
+          <label>Soportes para validar (presupuestos, actas, circulares, contratos, fotos…)<input type="file" name="fSop" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xls,image/*"></label>${docList(byKind('soporte'))}${imgList('soporte')}
+          ${petImages.length ? '<div class="notice warn">🖼️ Las imágenes y los PDF escaneados se envían tal cual: antes de subirlos, tapa nombres, cédulas, firmas y teléfonos.</div>' : ''}
           <label>Contexto (lo que debo saber)<textarea name="contexto" rows="3" placeholder="Ej.: la cuota se calcula con el presupuesto provisional aprobado por la constructora…">${esc(f.contexto || '')}</textarea></label>
           <label>Qué queremos darle a conocer al propietario<textarea name="accion" rows="2" placeholder="Ej.: explicar cómo se calcula la cuota y que no hay lugar a devolución">${esc(f.accion || '')}</textarea></label>
           <label>Nombres u otros datos a ocultar (separados por coma)<input name="ocultar" value="${esc(f.ocultar || '')}" placeholder="Ej.: nombres del propietario, del arrendatario…"></label>
@@ -1274,18 +1354,30 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
       const p = office.work.peticiones;
       const back = $('#petBack', panel); if (back) back.onclick = () => { keepAnswers(); p.step = 1; savePet(); renderPanel(); refreshOffice(); };
       const back2 = $('#petBack2', panel); if (back2) back2.onclick = () => { p.step = 2; savePet(); renderPanel(); };
-      const nw = $('#petNew', panel); if (nw) nw.onclick = () => { office.work.peticiones = { step: 1, form: { modo: 'responder' }, docs: [] }; savePet(); renderPanel(); refreshOffice(); };
+      const nw = $('#petNew', panel); if (nw) nw.onclick = () => { petImages.length = 0; office.work.peticiones = { step: 1, form: { modo: 'responder' }, docs: [] }; savePet(); renderPanel(); refreshOffice(); };
       if (p.step === 3) return bindResult('peticiones', panel, p.result, 'respuesta-derecho-de-peticion');
       const f = $('#wForm', panel);
       function keepAnswers() { if (p.step !== 2 || !f) return; p.answers = Object.fromEntries([...f.querySelectorAll('textarea')].map(t => [t.name, t.value])); savePet(); }
-      if (p.step === 2) { f.onsubmit = e => { e.preventDefault(); keepAnswers(); runPetDraft(); }; return; }
-      const keep = () => { Object.assign(p.form, { project: f.project.value, radicado: f.radicado.value, peticion: f.peticion.value, contexto: f.contexto.value, accion: f.accion.value, ocultar: f.ocultar.value }); if (f.borrador) p.form.borrador = f.borrador.value; savePet(); };
+      const addFiles = (input, kind, before) => input && (input.onchange = async () => {
+        before(); const r = await readFiles(input);
+        r.forEach(x => { if (x.image) petImages.push({ name: x.name, image: x.image, kind }); else if (x.text) { const an = anonymize(x.text, p.form.ocultar || ''); p.docs.push({ name: x.name, kind, text: an.text, hidden: an.count }); } });
+        savePet(); renderPanel();
+      });
+      panel.querySelectorAll('[data-rmimg]').forEach(b => b.onclick = () => { keepAnswers(); petImages.splice(Number(b.dataset.rmimg), 1); renderPanel(); });
+      if (p.step === 2) {
+        addFiles(f.fExtra, 'adicional', keepAnswers);
+        panel.querySelectorAll('[data-rmdoc]').forEach(b => b.onclick = () => { keepAnswers(); p.docs.splice(Number(b.dataset.rmdoc), 1); savePet(); renderPanel(); });
+        const ra = $('#petReanalyze', panel); if (ra) ra.onclick = () => { keepAnswers(); runPetAnalysis(true); };
+        f.onsubmit = e => { e.preventDefault(); keepAnswers(); runPetDraft(); }; return;
+      }
+      f.radicadoTxt.onchange = () => { const d = parsePastDate(f.radicadoTxt.value); if (d) { f.radicado.value = d; keep(); renderPanel(); } else if (f.radicadoTxt.value.trim()) toast('No entendí la fecha. Prueba con 6/11/2026 o «6 de noviembre».'); };
+      f.radicado.onchange = () => { f.radicadoTxt.value = ''; keep(); renderPanel(); };
+      const keep = () => { Object.assign(p.form, { radicadoTxt: f.radicadoTxt.value, project: f.project.value, radicado: f.radicado.value || parsePastDate(f.radicadoTxt.value) || '', peticion: f.peticion.value, contexto: f.contexto.value, accion: f.accion.value, ocultar: f.ocultar.value }); if (f.borrador) p.form.borrador = f.borrador.value; savePet(); };
       panel.querySelectorAll('[data-modo]').forEach(b => b.onclick = () => { keep(); p.form.modo = b.dataset.modo; savePet(); renderPanel(); });
-      const add = (input, kind) => input && (input.onchange = async () => { keep(); const r = await readFiles(input); r.filter(x => x.text).forEach(x => { const an = anonymize(x.text, p.form.ocultar || ''); p.docs.push({ name: x.name, kind, text: an.text, hidden: an.count }); }); savePet(); renderPanel(); });
-      add(f.fPet, 'peticion'); add(f.fBor, 'borrador'); add(f.fSop, 'soporte');
+      addFiles(f.fPet, 'peticion', keep); addFiles(f.fBor, 'borrador', keep); addFiles(f.fSop, 'soporte', keep);
       panel.querySelectorAll('[data-rmdoc]').forEach(b => b.onclick = () => { keep(); p.docs.splice(Number(b.dataset.rmdoc), 1); savePet(); renderPanel(); });
       f.ocultar.onchange = () => { keep(); p.docs = p.docs.map(d => { const an = anonymize(d.text, p.form.ocultar || ''); return { ...d, text: an.text, hidden: (d.hidden || 0) + an.count }; }); savePet(); renderPanel(); };
-      f.onsubmit = e => { e.preventDefault(); keep(); if (!p.form.peticion.trim() && !p.docs.some(d => d.kind === 'peticion')) return toast('Pega o adjunta el derecho de petición.'); runPetAnalysis(); };
+      f.onsubmit = e => { e.preventDefault(); keep(); if (!p.form.peticion.trim() && !p.docs.some(d => d.kind === 'peticion') && !petImages.some(i => i.kind === 'peticion')) return toast('Pega o adjunta el derecho de petición.'); runPetAnalysis(); };
     }
   };
   function petMaterial() {
@@ -1293,23 +1385,25 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
     const pet = [anonymize(f.peticion || '', hide).text, ...p.docs.filter(d => d.kind === 'peticion').map(d => d.text)].filter(x => x.trim()).join('\n\n').slice(0, 25000);
     const bor = [anonymize(f.borrador || '', hide).text, ...p.docs.filter(d => d.kind === 'borrador').map(d => d.text)].filter(x => x.trim()).join('\n\n').slice(0, 20000);
     let budget = 45000;
-    const sop = p.docs.filter(d => d.kind === 'soporte').map(d => { const t = d.text.slice(0, Math.min(15000, budget)); budget -= t.length; return t ? `### Soporte: ${d.name}\n${t}` : ''; }).filter(Boolean).join('\n\n');
+    const sop = p.docs.filter(d => d.kind === 'soporte' || d.kind === 'adicional').map(d => { const t = d.text.slice(0, Math.min(15000, budget)); budget -= t.length; return t ? `### ${d.kind === 'adicional' ? 'Documento adicional' : 'Soporte'}: ${d.name}\n${t}` : ''; }).filter(Boolean).join('\n\n');
     return { pet, bor, sop, ctx: anonymize(f.contexto || '', hide).text, acc: anonymize(f.accion || '', hide).text };
   }
+  const imgNote = () => petImages.length ? `\n\nSE ADJUNTAN ${petImages.length} IMÁGENES (${petImages.map(i => `${i.name}: ${{ peticion: 'petición', soporte: 'soporte', adicional: 'documento adicional', borrador: 'borrador del delegado' }[i.kind] || i.kind}`).join('; ')}). Léelas como parte del material. Nunca transcribas nombres, cédulas, firmas ni otros datos personales que aparezcan en ellas.` : '';
   function petPreview() { const m = petMaterial(); return [m.pet && 'PETICIÓN:\n' + m.pet, m.bor && 'BORRADOR DEL DELEGADO:\n' + m.bor, m.sop].filter(Boolean).join('\n\n'); }
-  async function runPetAnalysis() {
+  async function runPetAnalysis(again = false) {
     const p = office.work.peticiones, m = petMaterial();
+    const prev = again && p.analysis ? (p.analysis.preguntas || []).map((q, i) => `P: ${q.pregunta}\nR: ${(p.answers['q' + i] || '').trim() || '(sin responder)'}`).join('\n') + ((p.answers.voz || '').trim() ? `\nRespuesta libre (dictada): ${p.answers.voz}` : '') : '';
     if (!hasClaude()) return toast('Claude aún no está disponible.');
     const out = await work('peticiones', { verb: 'ANALIZA', text: 'la petición y los soportes', project: p.form.project, title: 'Análisis de petición', saveAs: null, fn: () => askClaude(PET_ROLE + `
 TAREA AHORA: analiza el material y, ANTES de redactar, prepara tus preguntas para la coordinadora. ${p.form.modo === 'revision' ? 'Vas a revisar el borrador de un delegado frente a la petición.' : 'Vas a responder la petición.'}
 Pregunta solo lo necesario para responder de fondo cada punto sin inventar (cifras, fechas, decisiones, soportes, postura de la Administración). Máximo 8 preguntas, concretas.
 Responde SOLO JSON: {"tipo":"Derecho de petición|Tutela|PQR|Queja|Requerimiento","plazoDias":10|15|30|null,"resumen":"2 o 3 frases","puntos":[{"solicitud":"lo que pide, en una frase"}],"vacios":["información que no está en los documentos"],"preguntas":[{"pregunta":"...","motivo":"por qué la necesito"}]}`,
-      `Fecha de recibido: ${p.form.radicado || 'sin dato'}\nProyecto: ${p.form.project || 'sin dato'}\nContexto de la coordinadora: ${m.ctx || 'ninguno'}\nQué queremos dar a conocer: ${m.acc || 'sin dato'}\n\nPETICIÓN:\n${m.pet}\n\n${m.bor ? 'BORRADOR DEL DELEGADO:\n' + m.bor + '\n\n' : ''}${m.sop ? 'SOPORTES:\n' + m.sop : ''}`) });
+      `Fecha de recibido: ${p.form.radicado || 'sin dato'}\nProyecto: ${p.form.project || 'sin dato'}\nContexto de la coordinadora: ${m.ctx || 'ninguno'}\nQué queremos dar a conocer: ${m.acc || 'sin dato'}\n\nPETICIÓN:\n${m.pet}\n\n${m.bor ? 'BORRADOR DEL DELEGADO:\n' + m.bor + '\n\n' : ''}${m.sop ? 'SOPORTES:\n' + m.sop : ''}${prev ? '\n\nRESPUESTAS QUE YA DIO LA COORDINADORA (no repitas lo ya respondido):\n' + prev : ''}${imgNote()}`, petImages.map(i => i.image)) });
     if (!out) return;
     try {
       const a = parseJson(out);
       if (a.plazoDias && p.form.radicado) a.vence = addBusinessDays(p.form.radicado, Number(a.plazoDias));
-      p.analysis = a; p.answers = {}; p.step = 2; savePet();
+      p.analysis = a; if (!again) p.answers = {}; else p.answers = { voz: p.answers.voz || '', extra: p.answers.extra || '' }; p.step = 2; savePet();
       logEvent('peticiones', `Tengo ${(a.preguntas || []).length} preguntas antes de redactar`, true, 'vos');
     } catch { toast('No pude leer el análisis; intenta de nuevo.'); }
     renderPanel(); refreshOffice();
@@ -1326,7 +1420,7 @@ Responde SOLO JSON: {"tipo":"Derecho de petición|Tutela|PQR|Queja|Requerimiento
 4) VERSIÓN CORREGIDA completa siguiendo la estructura.` : `TAREA: redacta el BORRADOR de respuesta siguiendo la estructura. Responde de fondo cada punto, en el mismo orden de la petición. Al final, después de una línea "---", agrega "PENDIENTES POR VALIDAR:" con la lista de vacíos que quedaron marcados (si no hay, escribe "Ninguno").`;
     const title = `${revision ? 'Revisión' : 'Respuesta'} · ${(a.resumen || p.form.contexto || 'derecho de petición').slice(0, 60)}`;
     const out = await work('peticiones', { verb: revision ? 'REVISA' : 'REDACTA', text: revision ? 'el borrador del delegado' : 'la respuesta', project: p.form.project, title, taskId: p.taskId, fn: () => askClaude(PET_ROLE + '\n\n' + PET_STRUCT + '\n\n' + task + '\nResponde solo con el documento, en texto plano.',
-      `Fecha de recibido: ${p.form.radicado || '[PENDIENTE]'}\nProyecto / conjunto: ${p.form.project || '[PENDIENTE]'}\nTipo: ${a.tipo || ''}\nContexto de la coordinadora: ${m.ctx || 'ninguno'}\nQué queremos dar a conocer: ${m.acc || 'sin dato'}\n\nRESPUESTAS DE LA COORDINADORA A TUS PREGUNTAS:\n${qa || 'Sin preguntas.'}\n${(p.answers.extra || '').trim() ? '\nIndicaciones adicionales: ' + p.answers.extra : ''}\n\nPETICIÓN:\n${m.pet}\n\n${m.bor ? 'BORRADOR DEL DELEGADO:\n' + m.bor + '\n\n' : ''}${m.sop ? 'SOPORTES:\n' + m.sop + '\n\n' : ''}${refs}`) });
+      `Fecha de recibido: ${p.form.radicado || '[PENDIENTE]'}\nProyecto / conjunto: ${p.form.project || '[PENDIENTE]'}\nTipo: ${a.tipo || ''}\nContexto de la coordinadora: ${m.ctx || 'ninguno'}\nQué queremos dar a conocer: ${m.acc || 'sin dato'}\n\nRESPUESTAS DE LA COORDINADORA A TUS PREGUNTAS:\n${qa || 'Sin preguntas.'}\n${(p.answers.voz || '').trim() ? '\nRESPUESTA LIBRE DE LA COORDINADORA (puede venir dictada por voz, con errores de transcripción; interprétala y úsala para responder las preguntas que correspondan):\n' + p.answers.voz : ''}${(p.answers.extra || '').trim() ? '\nIndicaciones adicionales: ' + p.answers.extra : ''}\n\nPETICIÓN:\n${m.pet}\n\n${m.bor ? 'BORRADOR DEL DELEGADO:\n' + m.bor + '\n\n' : ''}${m.sop ? 'SOPORTES:\n' + m.sop + '\n\n' : ''}${refs}${imgNote()}`, petImages.map(i => i.image)) });
     if (out) { p.result = { type: 'text', content: out.trim(), title, repoId: office.lastRepo?.peticiones }; p.step = 3; p.taskId = null; savePet(); renderPanel(); refreshOffice(); }
   }
   // Respuestas modelo (solo estructura), anonimizadas
@@ -1377,10 +1471,10 @@ Responde SOLO JSON: {"tipo":"Derecho de petición|Tutela|PQR|Queja|Requerimiento
       return { id: th.id, subject: last.subject || first.subject || '(sin asunto)', from: nm(last), date: last.date ? new Date(last.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ }) : '', day: ymd(last.date), snippet: decodeEntities(last.snippet || '').slice(0, 200), url: th.viewUrl || last.viewUrl || '' };
     });
   }
-  async function runInboxSummary() {
+  async function runInboxSummary(focus = true) {
     if (!HOST.mcp) return toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'El resumen de la bandeja funciona en la versión publicada en claude.ai.');
     if (!hasClaude()) return toast('Claude aún no está disponible.');
-    await work('bandeja', { verb: 'LEE', text: 'tus correos no leídos', title: 'Resumen de la bandeja', saveAs: null, fn: async () => {
+    await work('bandeja', { verb: 'LEE', text: 'tus correos no leídos', title: 'Resumen de la bandeja', saveAs: null, focus, fn: async () => {
       let threads = [], pageToken;
       for (let i = 0; i < 2; i++) {
         const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query: 'is:unread in:inbox', pageSize: 50, view: 'THREAD_VIEW_SUMMARY', ...(pageToken ? { pageToken } : {}) });
@@ -1425,7 +1519,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
   function autoInbox() {
     if (office.autoRunning || !HOST.mcp || !hasClaude() || !store.get('scanOk', false)) return;
     if (office.inbox && Date.now() - office.inbox.at < 2 * 3600e3) return;
-    office.autoRunning = true; runInboxSummary().finally(() => { office.autoRunning = false; });
+    office.autoRunning = true; runInboxSummary(false).finally(() => { office.autoRunning = false; });
   }
 
   views.agencia.after = () => { loadPending().then(() => { renderOffice(); renderPanel(); }); renderOffice(); renderPanel(); autoInbox(); };

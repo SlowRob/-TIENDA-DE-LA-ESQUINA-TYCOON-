@@ -22,6 +22,8 @@ La oficina tiene cinco agentes. Ninguno trabaja por su cuenta: solo actúan cuan
 
 Lo que entrega un agente queda en **«Para ti»** hasta que lo apruebas, y se guarda en **Entregables**.
 
+La ventana de cada agente funciona como en Gmail: se puede **minimizar**, **agrandar** o cambiar de ancho arrastrando su borde. Cuando un agente empieza a trabajar, su ventana se abre en grande.
+
 ### Daniela: cómo trabaja
 1. **Cargar.** Pegas o adjuntas la petición (PDF, Word o texto) y los soportes (presupuestos en Excel, actas, circulares). Además le das el contexto y lo que se quiere dar a conocer.
 2. **Datos personales.** Antes de que Daniela lea cualquier documento, se ocultan:
@@ -37,7 +39,11 @@ Lo que entrega un agente queda en **«Para ti»** hasta que lo apruebas, y se gu
    - anexos, cierre institucional y firma.
    
    El tono es asertivo, respetuoso, cordial, empático, profesional y firme, nunca hostil ni defensivo. Nunca inventa cifras, hechos ni normas: lo que falta queda como **[PENDIENTE]**.
-5. **Respuestas modelo.** En el Perfil de Daniela puedes subir hasta 3 respuestas que te gusten. Solo usa su estructura, y se guardan sin datos personales.
+5. **Responder con voz y adjuntar más.** En las preguntas puedes responder cada una con voz o dictar todo en un solo mensaje; Daniela identifica qué respuesta va con cada pregunta. También puedes agregar documentos e imágenes adicionales y pedirle que analice de nuevo.
+   - En la versión publicada en claude.ai, la página no tiene permiso para usar el micrófono: usa el dictado del teclado (🎤 en el celular, Win + H en Windows, Fn dos veces en Mac).
+   - En la versión instalada, en Chrome o Edge, el botón 🎤 dicta directamente.
+   - Las imágenes y los PDF escaneados se envían tal cual: tapa los datos personales antes de subirlos.
+6. **Respuestas modelo.** En el Perfil de Daniela puedes subir hasta 3 respuestas que te gusten. Solo usa su estructura, y se guardan sin datos personales.
 
 ## Versión publicada (claude.ai)
 - Claude funciona con tu cuenta, sin clave de API.
