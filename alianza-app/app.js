@@ -930,7 +930,7 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
       <header class="o-head">
         <div><h1>La oficina</h1><p class="sub">Cinco agentes, cada uno en lo suyo. Solo trabajan cuando les envías algo; lo que necesita tu aprobación queda en «Para ti».</p></div>
         <div class="o-head-actions"><button class="btn btn-ghost btn-sm" id="goRepo">🗂️ Entregables</button>
-          <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : 'Conectando IA…'}</div></div>
+          <div class="hud-card live ${live() ? 'on' : ''}"><span class="live-dot"></span>${live() ? 'EN VIVO · IA real' : HOST_FRAME ? 'Conectando IA…' : 'Falta la clave de Claude (⚙ Ajustes)'}</div></div>
       </header>
       <div class="o-grid">
         <aside class="o-left">

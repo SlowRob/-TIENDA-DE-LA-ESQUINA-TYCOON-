@@ -21,3 +21,21 @@ page = f'''<title>Alianza Tareas</title>
 out = root / 'dist'; out.mkdir(exist_ok=True)
 (out / 'alianza-tareas.html').write_text(page)
 print('dist/alianza-tareas.html', len(page), 'bytes')
+
+# Versión instalable de un solo archivo (abre con doble clic, sin carpetas ni servidor).
+standalone = f'''<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+{page.split('<style>', 1)[0]}<style>
+:root {{ color-scheme: light; }}
+{css}
+</style>
+</head>
+<body>
+{body}
+</body>
+</html>'''
+(out / 'alianza-tareas-instalable.html').write_text(standalone)
+print('dist/alianza-tareas-instalable.html', len(standalone), 'bytes')
