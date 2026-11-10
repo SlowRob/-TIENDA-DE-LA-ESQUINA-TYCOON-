@@ -545,3 +545,4 @@ h2.red-t { color: var(--rojo); }
   .agent-panel.size-min { left: auto; right: 8px; width: 240px !important; }
   .p-resize { display: none; }
 }
+.ai-box { background: var(--azul-claro); border-radius: 12px; padding: 10px; margin-bottom: 12px; }

@@ -551,6 +551,7 @@ h2.red-t { color: var(--rojo); }
   .agent-panel.size-min { left: auto; right: 8px; width: 240px !important; }
   .p-resize { display: none; }
 }
+.ai-box { background: var(--azul-claro); border-radius: 12px; padding: 10px; margin-bottom: 12px; }
 
 </style>
 
@@ -1866,6 +1867,9 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
           <label>Información de la pieza<textarea name="info" rows="4" placeholder="Ej.: Lavado de tanques el jueves 12 de noviembre de 8:00 a. m. a 2:00 p. m. Almacenar agua.">${esc(w.info || '')}</textarea></label>
           <label>Título (opcional)<input name="titulo" value="${esc(w.titulo || '')}"></label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="asIs" style="width:auto;margin:0" ${w.asIs ? 'checked' : ''}> Usar mi texto tal cual (solo diseñar)</label>
+          ${hasOpenAI() ? `<div class="ai-box"><label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" name="useAI" style="width:auto;margin:0" ${w.useAI === false ? '' : 'checked'}> Crear la imagen de fondo con ChatGPT</label>
+            <label style="margin:8px 0 0">¿Qué imagen de fondo? (opcional)<input name="escena" value="${esc(w.escena || '')}" placeholder="Ej.: tanque de agua de un conjunto residencial moderno"></label>
+            <small class="q-why">ChatGPT solo crea el fondo; textos, colores y logos los pone Mateo con la plantilla de Alianza.</small></div>` : ''}
           <details ${w.refText || (w.refImages || []).length ? 'open' : ''}><summary>Referencia (opcional)</summary>
             <label>Texto de referencia<textarea name="refText" rows="3">${esc(w.refText || '')}</textarea></label>
             <label>Imagen de referencia<input type="file" name="refImg" accept="image/*" multiple></label>
@@ -1879,7 +1883,7 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
     },
     bind(panel) {
       const w = office.work.piezas, f = $('#wForm', panel);
-      const keep = () => { w.project = f.project.value; w.info = f.info.value; w.titulo = f.titulo.value; w.asIs = f.asIs.checked; w.refText = f.refText.value; };
+      const keep = () => { w.project = f.project.value; w.info = f.info.value; w.titulo = f.titulo.value; w.asIs = f.asIs.checked; w.refText = f.refText.value; if (f.useAI) { w.useAI = f.useAI.checked; w.escena = f.escena.value; } };
       f.project.onchange = () => { keep(); renderPanel(); };
       f.refImg.onchange = async () => { keep(); w.refImages = [...(w.refImages || []), ...(await readFiles(f.refImg)).filter(x => x.image)]; renderPanel(); };
       panel.querySelectorAll('[data-rmimg]').forEach(b => b.onclick = () => { keep(); w.refImages.splice(Number(b.dataset.rmimg), 1); renderPanel(); });
@@ -1899,7 +1903,8 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
         const j = parseJson(raw); titulo = j.titulo || titulo; texto = j.texto || texto;
         office.activity.piezas = { verb: 'DISEÑA', text: titulo, t: Date.now() }; refreshOffice();
       }
-      return runDesigner({ project: w.project, titulo: titulo || 'Información', texto: texto || '', useAI: false });
+      if (hasOpenAI() && w.useAI !== false) { office.activity.piezas = { verb: 'PINTA', text: 'el fondo con ChatGPT', t: Date.now() }; refreshOffice(); }
+      return runDesigner({ project: w.project, titulo: titulo || 'Información', texto: texto || '', useAI: hasOpenAI() && w.useAI !== false, escena: w.escena || '' });
     } });
     if (out) { w.result = { type: 'image', content: out, title, repoId: office.lastRepo?.piezas }; w.taskId = null; renderPanel(); }
   }
