@@ -31,8 +31,10 @@
   <main id="view"></main>
 
   <nav class="tabbar" id="tabbar">
-    <button data-view="agencia" class="active"><span>✦</span>Oficina</button>
-    <button data-view="tareas"><span>✓</span>Tareas</button>
+    <button data-view="tareas" class="active"><span>✓</span>Tareas</button>
+    <button data-view="comite"><span>🗂️</span>Comité</button>
+    <button data-view="proyectos"><span>🏢</span>Proyectos</button>
+    <button data-view="bandeja"><span>✉️</span>Correo</button>
   </nav>
 
   <dialog id="taskDialog">
@@ -61,6 +63,7 @@
         <label>Vence<input type="date" name="due"></label>
         <label>Hora<input type="time" name="time"></label>
       </div>
+      <label>Categoría<select name="category"></select></label>
       <label>Recordarme
         <select name="remind">
           <option value="">Sin recordatorio</option>

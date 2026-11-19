@@ -64,7 +64,7 @@
     googleClientId: '', delegate: ''
   });
   let logos = store.get('logos', []); // [{name, project, dataUrl}]
-  const ui = { view: 'agencia', filterProject: '', search: '', agent: 'comunicado', mailLabel: null };
+  const ui = { view: 'tareas', filterProject: '', search: '', agent: 'comunicado', mailLabel: null };
   const saveTasks = () => { store.set('tasks', tasks); pushTasks(); };
 
   // ---------------------------------------------------------------- Modo publicado en claude.ai
@@ -330,6 +330,7 @@
         <div class="t-title">${esc(t.title)}</div>
         <div class="t-meta">
           <span class="chip">${esc(t.project)}</span>
+          ${t.category && t.category !== 'otros' && CATS[t.category] ? `<span class="chip">${CATS[t.category].ico} ${esc(CATS[t.category].label)}</span>` : ''}
           ${t.status === 'doing' ? '<span class="chip">✦ En curso</span>' : ''}
           ${t.priority === 'alta' ? '<span class="chip gold">Prioridad alta</span>' : ''}
           ${dueChip}
@@ -338,7 +339,7 @@
       </div>
       ${t.status !== 'done' ? `<div class="t-actions">
         ${t.due ? `<a class="icon-act" href="${esc(googleCalendarUrl(t))}" target="_blank" rel="noopener" title="Agregar a Google Calendar" onclick="event.stopPropagation()">📅</a>` : ''}
-        <button class="team-btn" data-team="${esc(t.id)}" title="Enviar al equipo">✦ Enviar al equipo</button></div>` : ''}
+        </div>` : ''}
     </div>`;
   }
 
@@ -1097,6 +1098,7 @@ Responde SOLO JSON: {"titulo":"máximo 7 palabras","texto":"de 2 a 6 líneas cor
   async function work(k, { verb, text, project, title, fn, saveAs = 'text', taskId = null, focus = true }) {
     if (office.status[k]) { toast(`${AGENTS[k].name} ya está trabajando.`); return null; }
     office.status[k] = 'trabajando'; office.activity[k] = { verb, text, t: Date.now() };
+    if (ui.view === 'bandeja') renderView();
     // Mientras un agente trabaja, su ventana se abre en grande.
     if (focus && ui.view === 'agencia' && k !== 'coordinacion') { office.open = k; office.tab = 'trabajo'; office.size = 'max'; renderPanel(); }
     refreshOffice();
@@ -1502,6 +1504,8 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       office.flash.bandeja = { title: `${office.inbox.total} sin leer`, sub: `${(office.inbox.derechos || []).length} derechos de petición`, t: Date.now() };
     }
     refreshOffice(); if (office.open === 'bandeja') renderPanel();
+    if (ui.view === 'bandeja') renderView();
+    pullComiteLabel(false);
   }
   async function findEmail(q) {
     if (!HOST.mcp) return toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'La búsqueda de correos funciona en la versión publicada en claude.ai.');
@@ -1519,6 +1523,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       w.found = []; return '';
     } });
     if (office.open === 'bandeja') renderPanel();
+    if (ui.view === 'bandeja') renderView();
   }
   function autoInbox() {
     if (office.autoRunning || !HOST.mcp || !hasClaude() || !store.get('scanOk', false)) return;
@@ -1553,7 +1558,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
   views.tareas = () => {
     const today = todayStr(), week = addDays(today, 7), t = ui.tareas;
     const q = norm(t.q);
-    const mine = tasks.filter(x => (!t.project || x.project === t.project) && (!q || norm(x.title + ' ' + (x.notes || '')).includes(q)));
+    const mine = tasks.filter(x => !isComite(x) && (!t.project || x.project === t.project) && (!t.cat || (x.category || guessCat(x.title)) === t.cat) && (!q || norm(x.title + ' ' + (x.notes || '')).includes(q)));
     const open = mine.filter(x => x.status !== 'done');
     const sortD = (a, b) => ((a.due || '9') + (a.time || '')).localeCompare((b.due || '9') + (b.time || ''));
     const sec = (title, list, cls = '') => list.length ? `<h2 class="${cls}">${title} <span class="count">${list.length}</span></h2>${list.sort(sortD).map(taskRow).join('')}` : '';
@@ -1569,7 +1574,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       if (done.length) body += `<button class="btn btn-ghost btn-sm" id="tgDone" style="margin-top:12px">${t.showDone ? 'Ocultar' : 'Ver'} hechas (${done.length})</button>${t.showDone ? done.slice(0, 40).map(taskRow).join('') : ''}`;
     }
     return `<h1>Tareas</h1>
-      <p class="sub">Lo que vas recordando, con fecha y aviso. Aquí ningún agente trabaja solo: si necesitas ayuda, usa «Enviar al equipo» en la tarea.</p>
+      <p class="sub">Tus tareas generales, con fecha y aviso. Los temas para comité van en la pestaña <b>Comité</b>.</p>
       <form id="quickTask" class="quick">
         <div class="cmd-main"><span class="cmd-ico">＋</span><textarea name="text" rows="1" placeholder="Escribe una tarea… (ej.: llamar a la constructora el viernes a las 10 am)" aria-label="Nueva tarea"></textarea><button class="btn btn-gold">Agregar</button></div>
         <div class="quick-fields">
@@ -1577,11 +1582,13 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
           <label>Fecha<input type="date" name="due"></label>
           <label>Hora<input type="time" name="time"></label>
           <label>Aviso<select name="remind"><option value="auto">Automático</option><option value="">Sin aviso</option><option value="0">A la hora</option><option value="30">30 min antes</option><option value="120">2 horas antes</option><option value="1440">1 día antes</option></select></label>
+          <label>Categoría<select name="category"><option value="">Detectar</option>${catOptions('')}</select></label>
           <label>Prioridad<select name="priority"><option value="media">Media</option><option value="alta">Alta</option><option value="baja">Baja</option></select></label>
         </div>
       </form>
       <div class="toolbar tareas-bar">
         <div class="seg seg-sm"><button class="${t.mode === 'lista' ? 'active' : ''}" data-mode="lista">Lista</button><button class="${t.mode === 'tablero' ? 'active' : ''}" data-mode="tablero">Tablero</button></div>
+        <select id="tCat"><option value="">Todas las categorías</option>${CAT_KEYS.map(k => `<option value="${k}" ${k === t.cat ? 'selected' : ''}>${CATS[k].ico} ${esc(CATS[k].label)}</option>`).join('')}</select>
         <select id="tProject"><option value="">Todos los proyectos</option>${projects.map(p => `<option ${p === t.project ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
         <input id="tQ" placeholder="Buscar…" value="${esc(t.q)}">
         <span class="spacer"></span>
@@ -1602,12 +1609,13 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       const text = ta.value.trim(); if (!text) return ta.focus();
       const w = parseWhen(text), due = f.due.value || w.due, time = f.time.value || w.time;
       const remind = f.remind.value === 'auto' ? (due ? (time ? '30' : '0') : '') : f.remind.value;
-      tasks.push({ id: uid(), created: Date.now(), status: 'todo', title: text.split('\n')[0].slice(0, 160), notes: text.includes('\n') ? text : '', project: f.project.value || matchProject(text), priority: f.priority.value, due, time, remind });
+      tasks.push({ id: uid(), created: Date.now(), status: 'todo', title: text.split('\n')[0].slice(0, 160), notes: text.includes('\n') ? text : '', project: f.project.value || matchProject(text), category: f.category.value || guessCat(text), priority: f.priority.value, due, time, remind });
       saveTasks(); toast(due ? `Tarea guardada para ${fmtDate(due)}${time ? ' a las ' + time : ''}${remind !== '' ? ' con aviso' : ''}.` : 'Tarea guardada.');
       renderView(); setTimeout(() => { const t2 = $('#quickTask textarea'); if (t2) t2.focus(); }, 0);
     };
     root.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { ui.tareas.mode = b.dataset.mode; renderView(); });
     $('#tProject', root).onchange = e => { ui.tareas.project = e.target.value; renderView(); };
+    $('#tCat', root).onchange = e => { ui.tareas.cat = e.target.value; renderView(); };
     const q = $('#tQ', root); q.oninput = e => { ui.tareas.q = e.target.value; renderView(); const n = $('#tQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     const td = $('#tgDone', root); if (td) td.onclick = () => { ui.tareas.showDone = !ui.tareas.showDone; renderView(); };
     $('#btnIcsAll', root).onclick = () => { const list = tasks.filter(x => x.status !== 'done' && x.due); if (!list.length) return toast('No hay tareas con fecha.'); downloadIcs(list, 'tareas-alianza.ics'); };
@@ -1695,6 +1703,345 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     return y;
   }
   function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  // ================================================================ v6: Tareas · Comité · Proyectos · Correo
+  // Categorías de las actividades importantes de cada proyecto.
+  const CATS = {
+    presupuesto: { label: 'Presupuesto y contabilidad', ico: '💰', re: /presupuest|contab|cuenta[s]? de cobro|factur|activos menores|recaudo|cartera|cuota/ },
+    asambleas: { label: 'Asambleas y consejo', ico: '🏛️', re: /asamblea|consejo|acta de asamblea|personer|representaci[oó]n legal|citaci[oó]n|comit[eé] de convivencia/ },
+    entregas: { label: 'Entregas y pólizas', ico: '📑', re: /entrega|p[oó]liza|contrato|mantenimiento|seguro|zonas comunes|acta de entrega/ },
+    peticiones: { label: 'Derechos de petición', ico: '⚖️', re: /derecho de petici|petici[oó]n|tutela|pqr|queja|reclamo/ },
+    otros: { label: 'Otros', ico: '📌', re: /$^/ }
+  };
+  const CAT_KEYS = Object.keys(CATS);
+  const guessCat = text => { const n = norm(text); return CAT_KEYS.find(k => k !== 'otros' && CATS[k].re.test(n)) || 'otros'; };
+  const catOptions = sel => CAT_KEYS.map(k => `<option value="${k}" ${k === sel ? 'selected' : ''}>${CATS[k].ico} ${CATS[k].label}</option>`).join('');
+  const isComite = t => t.kind === 'comite';
+  const generalTasks = () => tasks.filter(t => !isComite(t));
+  const comiteItems = () => tasks.filter(isComite);
+  const comiteOf = t => !t.project || t.project === 'General / AGI' ? 'Comité Alianza' : `Comité ${t.project}`;
+
+  // Semáforo de los temas de comité
+  const CST = {
+    pendiente: { label: 'Pendiente', color: '#C99A2E', bg: '#FBF3DE' },
+    curso: { label: 'En curso', color: '#2B5297', bg: '#E8EEF8' },
+    sinrespuesta: { label: 'Sin respuesta', color: '#B3261E', bg: '#FBE9E7' },
+    resuelto: { label: 'Resuelto', color: '#2E7D4F', bg: '#E6F4EC' }
+  };
+  const lastAvance = t => (t.history || []).filter(h => h.type !== 'creado').slice(-1)[0];
+  const daysSince = ts => Math.floor((Date.now() - ts) / 864e5);
+
+  // ---------------------------------------------------------------- Vista Comité
+  ui.comite = { which: '', estado: 'abiertos', q: '' };
+  views.comite = () => {
+    const c = ui.comite, q = norm(c.q);
+    const items = comiteItems();
+    const comites = [...new Set(items.map(comiteOf))].sort((a, b) => a === 'Comité Alianza' ? -1 : b === 'Comité Alianza' ? 1 : a.localeCompare(b, 'es'));
+    const list = items.filter(t => (!c.which || comiteOf(t) === c.which) &&
+      (c.estado === 'todos' || (c.estado === 'abiertos' ? t.estado !== 'resuelto' : t.estado === c.estado)) &&
+      (!q || norm(t.title + ' ' + (t.responsable || '') + ' ' + (t.history || []).map(h => h.text).join(' ')).includes(q)));
+    const order = { sinrespuesta: 0, pendiente: 1, curso: 2, resuelto: 3 };
+    list.sort((a, b) => (order[a.estado] ?? 1) - (order[b.estado] ?? 1) || (lastAvance(a)?.t || a.created) - (lastAvance(b)?.t || b.created));
+    const groups = {};
+    list.forEach(t => (groups[comiteOf(t)] = groups[comiteOf(t)] || []).push(t));
+    const counts = Object.fromEntries(Object.keys(CST).map(k => [k, items.filter(t => (!c.which || comiteOf(t) === c.which) && t.estado === k).length]));
+    return `<h1>Comité</h1>
+      <p class="sub">Temas para llevar al comité. Los generales van al <b>Comité Alianza</b>; los de un proyecto, al comité de ese proyecto.</p>
+      <form id="cmtAdd" class="quick">
+        <div class="cmd-main"><span class="cmd-ico">＋</span><textarea name="title" rows="1" placeholder="Nuevo tema para comité…" aria-label="Nuevo tema para comité"></textarea><button class="btn btn-gold">Agregar</button></div>
+        <div class="quick-fields">
+          <label>Proyecto<select name="project"><option value="">Detectar</option>${projects.map(p => `<option>${esc(p)}</option>`).join('')}</select></label>
+          <label>Responsable<input name="responsable" placeholder="Opcional"></label>
+          <label>Categoría<select name="category"><option value="">Detectar</option>${catOptions('')}</select></label>
+        </div>
+      </form>
+      <div class="sema-row">${Object.entries(CST).map(([k, s]) => `<button class="sema ${c.estado === k ? 'active' : ''}" data-est="${k}" style="--c:${s.color};--bg:${s.bg}"><span class="dot" style="background:${s.color}"></span>${s.label} <b>${counts[k]}</b></button>`).join('')}
+        <button class="sema ${c.estado === 'abiertos' ? 'active' : ''}" data-est="abiertos">Abiertos</button><button class="sema ${c.estado === 'todos' ? 'active' : ''}" data-est="todos">Todos</button></div>
+      <div class="toolbar tareas-bar">
+        <select id="cWhich"><option value="">Todos los comités</option>${comites.map(x => `<option ${x === c.which ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+        <input id="cQ" placeholder="Buscar en temas y avances…" value="${esc(c.q)}">
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm" id="cPull" title="Traer correos con la etiqueta PENDIENTES COMITE">✉️ Traer de Gmail</button>
+        <button class="btn btn-ghost btn-sm" data-exp="xlsx">⬇️ Excel</button><button class="btn btn-ghost btn-sm" data-exp="pdf">⬇️ PDF</button><button class="btn btn-ghost btn-sm" data-exp="txt">📋 Texto</button>
+      </div>
+      ${store.get('comite.pulledAt', 0) ? `<p class="sub" style="margin:-4px 0 8px;font-size:12px">Etiqueta «PENDIENTES COMITE» revisada ${esc(ago(store.get('comite.pulledAt', 0)))}.</p>` : ''}
+      ${list.length ? Object.entries(groups).map(([g, arr]) => `<h2>${esc(g)} <span class="count">${arr.length}</span></h2>${arr.map(cmtCard).join('')}`).join('') : '<div class="empty">No hay temas con estos filtros. Escribe arriba el primero o tráelos de Gmail.</div>'}`;
+  };
+  function cmtCard(t) {
+    const s = CST[t.estado] || CST.pendiente, la = lastAvance(t), n = (t.history || []).filter(h => h.type !== 'creado').length;
+    const stale = t.estado !== 'resuelto' && daysSince(la ? la.t : t.created) >= 14;
+    return `<div class="cmt-card" data-cmt="${esc(t.id)}" style="--c:${s.color}" tabindex="0" role="button">
+      <div class="cmt-top"><span class="sema-pill" style="background:${s.bg};color:${s.color}"><span class="dot" style="background:${s.color}"></span>${s.label}</span>
+        <span class="chip">${esc(t.project || 'General / AGI')}</span>${t.category && t.category !== 'otros' ? `<span class="chip">${CATS[t.category].ico} ${esc(CATS[t.category].label)}</span>` : ''}
+        ${t.responsable ? `<span class="chip gold">👤 ${esc(t.responsable)}</span>` : ''}${t.mail ? '<span title="Viene de Gmail">✉️</span>' : ''}</div>
+      <b class="cmt-title">${esc(t.title)}</b>
+      <p class="cmt-last">${la ? `<time>${esc(fmtDate(ymd(new Date(la.t).toISOString())))}</time> ${esc(la.text.slice(0, 160))}` : '<span class="sub">Sin avances todavía.</span>'}</p>
+      <div class="cmt-foot"><small>${n} ${n === 1 ? 'avance' : 'avances'}${(t.presentado || []).length ? ` · presentado ${t.presentado.length} ${t.presentado.length === 1 ? 'vez' : 'veces'}` : ''}</small>${stale ? `<small class="red-t">Sin avance hace ${daysSince(la ? la.t : t.created)} días</small>` : ''}</div>
+    </div>`;
+  }
+  views.comite.after = root => {
+    const f = $('#cmtAdd', root), ta = f.title;
+    ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; };
+    ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } };
+    f.onsubmit = e => {
+      e.preventDefault(); const title = ta.value.trim(); if (!title) return ta.focus();
+      const project = f.project.value || matchProject(title);
+      tasks.push({ id: uid(), kind: 'comite', created: Date.now(), title: title.slice(0, 200), project, responsable: f.responsable.value.trim(), category: f.category.value || guessCat(title), estado: 'pendiente', status: 'todo', history: [{ t: Date.now(), type: 'creado', text: 'Tema creado' }] });
+      saveTasks(); toast(`Agregado al ${comiteOf({ project })}.`); renderView(); setTimeout(() => $('#cmtAdd textarea')?.focus(), 0);
+    };
+    root.querySelectorAll('[data-est]').forEach(b => b.onclick = () => { ui.comite.estado = b.dataset.est; renderView(); });
+    $('#cWhich', root).onchange = e => { ui.comite.which = e.target.value; renderView(); };
+    const q = $('#cQ', root); q.oninput = e => { ui.comite.q = e.target.value; renderView(); const n = $('#cQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    root.querySelectorAll('[data-cmt]').forEach(el => { el.onclick = () => openComite(el.dataset.cmt); el.onkeydown = e => { if (e.key === 'Enter') openComite(el.dataset.cmt); }; });
+    root.querySelectorAll('[data-exp]').forEach(b => b.onclick = () => exportComite(b.dataset.exp));
+    $('#cPull', root).onclick = () => pullComiteLabel(true);
+    if (Date.now() - store.get('comite.pulledAt', 0) > 3600e3) pullComiteLabel(false);
+  };
+
+  // Detalle de un tema de comité, con historial de avances
+  function openComite(id) {
+    const t = tasks.find(x => x.id === id); if (!t) return;
+    const d = $('#viewDialog');
+    const hist = (t.history || []).slice().reverse();
+    d.innerHTML = `<div class="vd cmt-detail">
+      <header><div class="cmt-top"><span class="sema-pill" style="background:${(CST[t.estado] || CST.pendiente).bg};color:${(CST[t.estado] || CST.pendiente).color}">${(CST[t.estado] || CST.pendiente).label}</span><span class="chip">${esc(comiteOf(t))}</span></div><button class="p-close" id="cdClose" aria-label="Cerrar">×</button></header>
+      <form id="cdForm" class="workspace">
+        <label>Tema<textarea name="title" rows="2">${esc(t.title)}</textarea></label>
+        <div class="row"><label>Proyecto<select name="project">${projects.map(p => `<option ${p === t.project ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+          <label>Responsable<input name="responsable" value="${esc(t.responsable || '')}" placeholder="Opcional"></label></div>
+        <div class="row"><label>Categoría<select name="category">${catOptions(t.category || 'otros')}</select></label>
+          <label>Estado<select name="estado">${Object.entries(CST).map(([k, s]) => `<option value="${k}" ${k === (t.estado || 'pendiente') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label></div>
+      </form>
+      <div class="toolbar"><button class="btn btn-primary btn-sm" id="cdPresent">✓ Presentado hoy en comité</button>${t.mail?.url ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(t.mail.url)}">Abrir correo de origen</a>` : ''}<span class="spacer"></span><button class="btn btn-ghost btn-sm danger" id="cdDel">Eliminar tema</button></div>
+      <h4>Nuevo avance</h4>
+      <form id="avForm" class="workspace av-form">
+        <textarea name="avance" rows="3" placeholder="¿Qué se dijo o qué avanzó? (puedes dictarlo)"></textarea>
+        ${micBtn('avance', '🎤 Dictar avance')}
+        <div class="av-tools">
+          <label class="btn btn-ghost btn-sm file-btn">📎 Adjuntar<input type="file" name="files" multiple accept="image/*,.pdf,.docx,.xlsx,.xls,.txt" hidden></label>
+          <button type="button" class="btn btn-ghost btn-sm" id="avMailBtn">✉️ Desde un correo</button>
+          <span class="spacer"></span><button class="btn btn-gold btn-sm">Guardar avance</button>
+        </div>
+        <div id="avFiles"></div>
+        <div id="avMail" hidden><div class="find-mini"><input name="mq" placeholder="¿Qué correo? (remitente, tema…)"><button type="button" class="btn btn-primary btn-sm" id="avMailGo">Buscar</button></div><div id="avMailRes"></div></div>
+      </form>
+      <h4>Historial</h4>
+      <ol class="timeline">${hist.map(h => `<li class="tl-${h.type || 'avance'}"><time>${esc(new Date(h.t).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: TZ }))}</time>
+        <div>${h.type === 'presentado' ? '<b>Presentado en comité</b>' : h.type === 'estado' ? `<b>${esc(h.text)}</b>` : esc(h.text)}
+        ${(h.files || []).map(f => `<a class="att" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join('')}
+        ${h.mail ? `<a class="att" href="${esc(h.mail.url)}" target="_blank" rel="noopener">✉️ ${esc(h.mail.subject)}</a>` : ''}</div></li>`).join('')}</ol>
+    </div>`;
+    if (!d.open) d.showModal();
+    const pending = { files: [], mail: null };
+    const save = () => {
+      const f = $('#cdForm', d);
+      const before = t.estado;
+      Object.assign(t, { title: f.title.value.trim() || t.title, project: f.project.value, responsable: f.responsable.value.trim(), category: f.category.value, estado: f.estado.value });
+      t.status = t.estado === 'resuelto' ? 'done' : 'todo'; if (t.estado === 'resuelto' && before !== 'resuelto') t.doneAt = Date.now();
+      if (before !== t.estado) (t.history = t.history || []).push({ t: Date.now(), type: 'estado', text: `Estado: ${CST[t.estado].label}` });
+      saveTasks();
+    };
+    $('#cdForm', d).onchange = () => { save(); };
+    $('#cdClose', d).onclick = () => { save(); d.close(); renderView(); };
+    d.onclose = () => renderView();
+    $('#cdPresent', d).onclick = () => { save(); t.presentado = [...(t.presentado || []), todayStr()]; (t.history = t.history || []).push({ t: Date.now(), type: 'presentado', text: 'Presentado en comité' }); saveTasks(); openComite(id); toast('Registrado como presentado hoy.'); };
+    $('#cdDel', d).onclick = e => confirmClick(e.currentTarget, '¿Seguro? Toca otra vez', () => { tasks = tasks.filter(x => x.id !== id); saveTasks(); d.close(); });
+    bindMics(d);
+    const av = $('#avForm', d);
+    const paintFiles = () => { $('#avFiles', d).innerHTML = [...pending.files.map((f, i) => `<span class="chip">📎 ${esc(f.name)} <button type="button" class="link-btn" data-rmf="${i}">×</button></span>`), pending.mail ? `<span class="chip">✉️ ${esc(pending.mail.subject)} <button type="button" class="link-btn" data-rmm>×</button></span>` : ''].join(' ');
+      d.querySelectorAll('[data-rmf]').forEach(b => b.onclick = () => { pending.files.splice(Number(b.dataset.rmf), 1); paintFiles(); });
+      const rm = d.querySelector('[data-rmm]'); if (rm) rm.onclick = () => { pending.mail = null; paintFiles(); }; };
+    av.files.onchange = async () => {
+      for (const file of [...av.files.files]) {
+        try {
+          if (HOST.assets) { const a = await HOST.assets.upload(file); pending.files.push({ name: file.name, url: a.url, assetId: a.id }); }
+          else if (file.size < 700 * 1024) pending.files.push({ name: file.name, url: await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(file); }) });
+          else toast(`${file.name} es muy grande para guardarlo en esta versión (máx. 700 KB).`);
+        } catch (e) { toast(`${file.name}: no se pudo adjuntar.`); }
+      }
+      av.files.value = ''; paintFiles();
+    };
+    $('#avMailBtn', d).onclick = () => { $('#avMail', d).hidden = !$('#avMail', d).hidden; av.mq.focus(); };
+    $('#avMailGo', d).onclick = async () => {
+      const qv = av.mq.value.trim(); if (!qv) return;
+      const res = $('#avMailRes', d); res.innerHTML = '<p class="sub">Buscando…</p>';
+      try {
+        const rows = await mailSearch(qv);
+        res.innerHTML = rows.length ? rows.map((r, i) => `<button type="button" class="found-row pick" data-pick="${i}"><b>${esc(r.subject)}</b><small>${esc(r.from)} · ${esc(r.date)}</small></button>`).join('') : '<p class="sub">No encontré correos con esa descripción.</p>';
+        res.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { const r = rows[Number(b.dataset.pick)]; pending.mail = { subject: r.subject, url: r.url, from: r.from, date: r.date }; if (!av.avance.value.trim()) av.avance.value = `Correo de ${r.from} (${r.date}): ${r.snippet}`; $('#avMail', d).hidden = true; paintFiles(); });
+      } catch (e) { res.innerHTML = `<p class="sub">${esc(e?.code ? mcpMsg(e) : (e.message || 'No se pudo buscar.'))}</p>`; }
+    };
+    av.onsubmit = e => {
+      e.preventDefault(); save();
+      const text = av.avance.value.trim(); if (!text && !pending.files.length && !pending.mail) return toast('Escribe el avance o adjunta algo.');
+      (t.history = t.history || []).push({ t: Date.now(), type: 'avance', text: text || (pending.mail ? 'Correo relacionado' : 'Adjunto'), files: pending.files, mail: pending.mail });
+      if (t.estado === 'pendiente') t.estado = 'curso';
+      saveTasks(); openComite(id); toast('Avance guardado.');
+    };
+  }
+
+  // Búsqueda directa en Gmail (solo lectura) para vincular correos
+  async function mailSearch(q) {
+    if (!HOST.mcp) throw new Error(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'Vincular correos funciona en la versión publicada en claude.ai.');
+    let queries = [q];
+    if (hasClaude()) { try { const j = parseJson(await askClaude(`Convierte la descripción de un correo en búsquedas de Gmail. Hoy es ${todayStr()}. Usa operadores (from:, subject:, after:YYYY/MM/DD) solo si la descripción los sugiere. Responde SOLO JSON: {"queries":["precisa","más amplia"]}`, q)); if (Array.isArray(j.queries) && j.queries.length) queries = [...j.queries.slice(0, 2), q]; } catch { } }
+    for (const query of queries) {
+      const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query, pageSize: 8, view: 'THREAD_VIEW_SUMMARY' });
+      const rows = threadRows((r.payload && r.payload.threads) || []);
+      if (rows.length) return rows;
+    }
+    return [];
+  }
+
+  // Correos con la etiqueta PENDIENTES COMITE → temas de comité (sin duplicar)
+  async function pullComiteLabel(manual) {
+    if (!HOST.mcp) { if (manual) toast(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'Traer de Gmail funciona en la versión publicada en claude.ai.'); return; }
+    if (!manual && !store.get('scanOk', false)) return;
+    if (office.pulling) return; office.pulling = true;
+    try {
+      const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query: 'label:pendientes-comite', pageSize: 50, view: 'THREAD_VIEW_SUMMARY' });
+      const rows = threadRows((r.payload && r.payload.threads) || []);
+      const known = new Set(comiteItems().map(t => t.mail?.id).filter(Boolean));
+      const nuevos = rows.filter(x => !known.has(x.id));
+      nuevos.forEach(x => {
+        const title = x.subject.replace(/^(re|rv|fw|fwd)\s*:\s*/gi, '').trim();
+        tasks.push({ id: uid(), kind: 'comite', created: Date.now(), title, project: matchProject(x.subject + ' ' + x.snippet), responsable: '', category: guessCat(x.subject + ' ' + x.snippet), estado: 'pendiente', status: 'todo', mail: { id: x.id, url: x.url, subject: x.subject },
+          history: [{ t: Date.now(), type: 'creado', text: 'Ingresó desde Gmail (etiqueta PENDIENTES COMITE)' }, { t: Date.now(), type: 'avance', text: `Correo de ${x.from} (${x.date}): ${x.snippet}`, mail: { subject: x.subject, url: x.url } }] });
+      });
+      if (nuevos.length) saveTasks();
+      store.set('comite.pulledAt', Date.now()); store.set('scanOk', true);
+      if (manual || nuevos.length) toast(nuevos.length ? `Entraron ${nuevos.length} ${nuevos.length === 1 ? 'tema' : 'temas'} desde «PENDIENTES COMITE».` : 'No hay correos nuevos en «PENDIENTES COMITE».');
+      if (ui.view === 'comite') renderView();
+    } catch (e) { if (manual) toast(e?.code ? mcpMsg(e) : (e.message || 'No se pudo leer Gmail.')); }
+    office.pulling = false;
+  }
+
+  // Exportar la lista de comité visible (Excel, PDF o texto)
+  function comiteRows() {
+    const c = ui.comite;
+    return comiteItems().filter(t => (!c.which || comiteOf(t) === c.which) && (c.estado === 'todos' || (c.estado === 'abiertos' ? t.estado !== 'resuelto' : t.estado === c.estado)))
+      .sort((a, b) => comiteOf(a).localeCompare(comiteOf(b), 'es'))
+      .map(t => { const la = lastAvance(t); return { comite: comiteOf(t), proyecto: t.project || 'General / AGI', tema: t.title, categoria: CATS[t.category || 'otros'].label, estado: (CST[t.estado] || CST.pendiente).label, responsable: t.responsable || '', ultimo: la ? la.text : '', fecha: la ? new Date(la.t).toLocaleDateString('es-CO', { timeZone: TZ }) : '', historial: (t.history || []).filter(h => h.type !== 'creado').map(h => `${new Date(h.t).toLocaleDateString('es-CO', { timeZone: TZ })}: ${h.text}`).join('\n') }; });
+  }
+  async function exportComite(kind) {
+    const rows = comiteRows(); if (!rows.length) return toast('No hay temas para exportar con estos filtros.');
+    const name = `comite-${(ui.comite.which || 'todos').replace(/\W+/g, '-').toLowerCase()}-${todayStr()}`;
+    try {
+      if (kind === 'txt') {
+        let s = `TEMAS PARA COMITÉ — ${ui.comite.which || 'Todos los comités'}\n${new Date().toLocaleDateString('es-CO', { dateStyle: 'full', timeZone: TZ })}\n`;
+        let g = '';
+        rows.forEach((r, i) => { if (r.comite !== g) { g = r.comite; s += `\n■ ${g.toUpperCase()}\n`; } s += `\n${i + 1}. ${r.tema}\n   Estado: ${r.estado}${r.responsable ? ' · Responsable: ' + r.responsable : ''}${ui.comite.which ? '' : ' · Proyecto: ' + r.proyecto}\n${r.ultimo ? `   Último avance (${r.fecha}): ${r.ultimo}\n` : ''}`; });
+        const d = $('#viewDialog');
+        d.innerHTML = `<div class="vd"><header><b>Texto para correo o WhatsApp</b><button class="p-close" id="txClose">×</button></header><textarea class="tx-out" rows="16" readonly>${esc(s)}</textarea><div class="toolbar"><button class="btn btn-gold btn-sm" id="txCopy">Copiar</button></div></div>`;
+        d.showModal(); $('#txClose', d).onclick = () => d.close();
+        $('#txCopy', d).onclick = () => navigator.clipboard.writeText(s).then(() => toast('Copiado.'), () => { d.querySelector('textarea').select(); toast('Selecciona y copia el texto.'); });
+        return;
+      }
+      if (kind === 'xlsx') {
+        await loadScript(LIBS.xlsx[0]);
+        const X = window.XLSX, ws = X.utils.json_to_sheet(rows.map(r => ({ 'Comité': r.comite, 'Proyecto': r.proyecto, 'Tema': r.tema, 'Categoría': r.categoria, 'Estado': r.estado, 'Responsable': r.responsable, 'Último avance': r.ultimo, 'Fecha último avance': r.fecha, 'Historial': r.historial })));
+        ws['!cols'] = [18, 18, 50, 24, 14, 18, 60, 14, 80].map(w => ({ wch: w }));
+        const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Comité');
+        const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
+        return saveFile(name + '.xlsx', new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      }
+      if (kind === 'pdf') {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+        const doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+        const W = doc.internal.pageSize.getWidth();
+        doc.setFillColor(26, 56, 103); doc.rect(0, 0, W, 54, 'F'); doc.setFillColor(149, 118, 47); doc.rect(0, 54, W, 4, 'F');
+        doc.setTextColor(255); doc.setFontSize(16); doc.text('Temas para comité', 30, 32);
+        doc.setFontSize(10); doc.text(`${ui.comite.which || 'Todos los comités'} · ${new Date().toLocaleDateString('es-CO', { dateStyle: 'long', timeZone: TZ })}`, 30, 46);
+        doc.text('Alianza Grupo Inmobiliario · Coordinación de Proyectos', W - 30, 46, { align: 'right' });
+        doc.autoTable({ startY: 72, head: [['#', 'Comité', 'Tema', 'Estado', 'Responsable', 'Último avance']], body: rows.map((r, i) => [i + 1, r.comite.replace('Comité ', ''), r.tema, r.estado, r.responsable, r.ultimo ? `${r.fecha}: ${r.ultimo}` : '']),
+          styles: { fontSize: 8.5, cellPadding: 5, valign: 'top' }, headStyles: { fillColor: [26, 56, 103], textColor: 255 }, alternateRowStyles: { fillColor: [244, 247, 252] },
+          columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 90 }, 2: { cellWidth: 210 }, 3: { cellWidth: 70 }, 4: { cellWidth: 80 } },
+          didParseCell: h => { if (h.section === 'body' && h.column.index === 3) { const k = Object.values(CST).find(s => s.label === h.cell.raw); if (k) h.cell.styles.textColor = k.color; h.cell.styles.fontStyle = 'bold'; } } });
+        return saveFile(name + '.pdf', doc.output('blob'));
+      }
+    } catch (e) { toast('No se pudo exportar: ' + (e?.message || e)); }
+  }
+
+  // ---------------------------------------------------------------- Vista Proyectos (ficha por proyecto)
+  ui.proyecto = null;
+  function catState(list) {
+    const today = todayStr(), open = list.filter(t => (isComite(t) ? t.estado !== 'resuelto' : t.status !== 'done'));
+    if (open.some(t => t.due && t.due < today)) return { k: 'red', label: 'Vencido', color: '#B3261E' };
+    if (open.some(t => t.estado === 'sinrespuesta')) return { k: 'red', label: 'Sin respuesta', color: '#B3261E' };
+    if (open.length) return { k: 'yellow', label: `${open.length} pendiente${open.length === 1 ? '' : 's'}`, color: '#C99A2E' };
+    return { k: 'green', label: 'Al día', color: '#2E7D4F' };
+  }
+  views.proyectos = () => {
+    if (ui.proyecto) return projectDetail(ui.proyecto);
+    const cards = projects.map(p => {
+      const items = tasks.filter(t => t.project === p);
+      const open = items.filter(t => isComite(t) ? t.estado !== 'resuelto' : t.status !== 'done');
+      return { p, items, open };
+    }).sort((a, b) => b.open.length - a.open.length || a.p.localeCompare(b.p, 'es'));
+    return `<h1>Proyectos</h1><p class="sub">Ficha de cada proyecto con sus actividades importantes. 🟢 al día · 🟡 pendiente · 🔴 vencido o sin respuesta.</p>
+      <div class="toolbar tareas-bar"><input id="pQ" placeholder="Buscar proyecto…" value="${esc(ui.pq || '')}"></div>
+      <div class="proj-grid">${cards.filter(c => !ui.pq || norm(c.p).includes(norm(ui.pq))).map(c => `<button class="proj-card" data-proj="${esc(c.p)}">
+        <div class="pc-head"><b>${esc(c.p)}</b><span class="pc-n">${c.open.length}</span></div>
+        <div class="pc-cats">${CAT_KEYS.filter(k => k !== 'otros').map(k => { const st = catState(c.items.filter(t => (t.category || guessCat(t.title)) === k)); return `<span class="pc-cat" title="${esc(CATS[k].label)}: ${esc(st.label)}"><span class="dot" style="background:${st.color}"></span>${CATS[k].ico}</span>`; }).join('')}</div>
+        <small>${c.open.filter(isComite).length} temas de comité · ${c.open.filter(t => !isComite(t)).length} tareas</small>
+      </button>`).join('')}</div>`;
+  };
+  function projectDetail(p) {
+    const items = tasks.filter(t => t.project === p);
+    const sec = k => {
+      const list = items.filter(t => (t.category || guessCat(t.title)) === k);
+      const st = catState(list), open = list.filter(t => isComite(t) ? t.estado !== 'resuelto' : t.status !== 'done');
+      return `<section class="pd-sec"><header><span class="dot" style="background:${st.color}"></span><b>${CATS[k].ico} ${esc(CATS[k].label)}</b><span class="sub">${esc(st.label)}</span>
+          <button class="btn btn-ghost btn-sm" data-addcat="${k}">+ Tarea</button></header>
+        ${open.length ? open.map(t => isComite(t) ? `<div class="pd-row" data-cmt="${esc(t.id)}"><span class="sema-pill sm" style="background:${CST[t.estado].bg};color:${CST[t.estado].color}">${CST[t.estado].label}</span>${esc(t.title)} <small class="sub">· Comité</small></div>` : taskRow(t)).join('') : '<p class="sub" style="margin:4px 0">Nada pendiente.</p>'}
+        <form class="pd-add" data-form="${k}" hidden><input name="t" placeholder="Nueva tarea de ${esc(CATS[k].label.toLowerCase())}…"><input type="date" name="due" aria-label="Fecha"><button class="btn btn-gold btn-sm">Agregar</button></form>
+      </section>`;
+    };
+    return `<div class="toolbar"><button class="btn btn-ghost btn-sm" id="pdBack">← Proyectos</button></div>
+      <h1>${esc(p)}</h1><p class="sub">Comité: ${esc(comiteOf({ project: p }))}</p>
+      <div class="toolbar"><button class="btn btn-ghost btn-sm" id="pdMail">✉️ Ver correos del proyecto</button><button class="btn btn-ghost btn-sm" id="pdCmt">Ver sus temas de comité</button></div>
+      <div id="pdMailRes"></div>
+      <div class="pd-grid">${CAT_KEYS.map(sec).join('')}</div>`;
+  }
+  views.proyectos.after = root => {
+    const q = $('#pQ', root); if (q) q.oninput = e => { ui.pq = e.target.value; renderView(); const n = $('#pQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    root.querySelectorAll('[data-proj]').forEach(b => b.onclick = () => { ui.proyecto = b.dataset.proj; renderView(); window.scrollTo(0, 0); });
+    const back = $('#pdBack', root); if (back) back.onclick = () => { ui.proyecto = null; renderView(); };
+    bindTaskEvents(root);
+    root.querySelectorAll('[data-cmt]').forEach(el => el.onclick = () => openComite(el.dataset.cmt));
+    root.querySelectorAll('[data-addcat]').forEach(b => b.onclick = () => { const f = root.querySelector(`[data-form="${b.dataset.addcat}"]`); f.hidden = !f.hidden; if (!f.hidden) f.t.focus(); });
+    root.querySelectorAll('[data-form]').forEach(f => f.onsubmit = e => {
+      e.preventDefault(); const title = f.t.value.trim(); if (!title) return;
+      const w = parseWhen(title), due = f.due.value || w.due;
+      tasks.push({ id: uid(), created: Date.now(), status: 'todo', title, project: ui.proyecto, category: f.dataset.form, priority: 'media', due, time: w.time, remind: due ? '0' : '', notes: '' });
+      saveTasks(); renderView();
+    });
+    const pc = $('#pdCmt', root); if (pc) pc.onclick = () => { ui.comite.which = comiteOf({ project: ui.proyecto }); ui.comite.estado = 'abiertos'; setView('comite'); };
+    const pm = $('#pdMail', root); if (pm) pm.onclick = async () => {
+      const res = $('#pdMailRes', root); res.innerHTML = '<p class="sub">Buscando correos…</p>';
+      try {
+        if (!HOST.mcp) throw new Error(HOST_FRAME ? 'Gmail se está conectando; intenta en un momento.' : 'Los correos se ven en la versión publicada en claude.ai.');
+        const lab = gmail.labels.length ? gmail.labels : (await (async () => { const r = await HOST.mcp.callTool(GMAIL, 'list_labels', {}); return ((r.payload && r.payload.labels) || []).map(l => ({ id: l.labelId, full: l.name, name: l.name.replace(/^[^/]+@[^/]+\//, '') })); })());
+        const key = norm(ui.proyecto.split(' (')[0]);
+        const l = lab.find(x => norm(x.name) === key) || lab.find(x => norm(x.name).includes(key));
+        const query = l ? `label:${l.full.replace(/[\s/]/g, '-')} newer_than:60d` : `"${ui.proyecto.split(' (')[0]}" newer_than:30d`;
+        const r = await HOST.mcp.callTool(GMAIL, 'search_threads', { query, pageSize: 15, view: 'THREAD_VIEW_SUMMARY' });
+        const rows = threadRows((r.payload && r.payload.threads) || []);
+        res.innerHTML = `<div class="found">${rows.length ? rows.map(x => `<div class="found-row"><b>${esc(x.subject)}</b><small>${esc(x.from)} · ${esc(x.date)}</small><p class="sub" style="margin:4px 0">${esc(x.snippet)}</p><div class="toolbar">${x.url ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(x.url)}">Abrir en Gmail</a>` : ''}<button class="btn btn-ghost btn-sm" data-mk="${esc(x.id)}">+ Tema de comité</button></div></div>`).join('') : '<p class="sub">Sin correos recientes de este proyecto.</p>'}</div>`;
+        res.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => {
+          const x = rows.find(y => y.id === b.dataset.mk);
+          tasks.push({ id: uid(), kind: 'comite', created: Date.now(), title: x.subject.replace(/^(re|rv|fw|fwd)\s*:\s*/gi, ''), project: ui.proyecto, responsable: '', category: guessCat(x.subject + ' ' + x.snippet), estado: 'pendiente', status: 'todo', mail: { id: x.id, url: x.url, subject: x.subject }, history: [{ t: Date.now(), type: 'creado', text: 'Tema creado desde un correo' }, { t: Date.now(), type: 'avance', text: `Correo de ${x.from} (${x.date}): ${x.snippet}`, mail: { subject: x.subject, url: x.url } }] });
+          saveTasks(); b.textContent = '✓ En comité'; b.disabled = true;
+        });
+      } catch (e) { res.innerHTML = `<p class="sub">${esc(e?.code ? mcpMsg(e) : e.message)}</p>`; }
+    };
+  };
+
+  // ---------------------------------------------------------------- Vista Correo (Sofía)
+  views.bandeja = () => `<h1>Correo</h1><p class="sub">Sofía lee tu Gmail en solo lectura: te resume los no leídos y te ayuda a encontrar un correo.</p>
+    <div class="card bandeja-card">${WORK.bandeja.html()}</div>`;
+  views.bandeja.after = root => { WORK.bandeja.bind(root); autoInbox(); };
 
   function renderCmdbar() { const b = $('#cmdbar'); if (b) b.hidden = true; }
 
@@ -1863,6 +2210,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     const t = id ? tasks.find(x => x.id === id) : { title: '', project: ui.filterProject || projects[0], status: 'todo', priority: 'media', due: '', time: '', remind: '', notes: '', ...preset };
     fillProjectSelect();
     if (!projects.includes(t.project)) form.project.insertAdjacentHTML('beforeend', `<option>${esc(t.project)}</option>`);
+    form.category.innerHTML = catOptions(t.category || guessCat(t.title || ''));
     for (const k of ['title', 'project', 'status', 'priority', 'due', 'time', 'remind', 'notes']) form[k].value = t[k] ?? '';
     $('#taskSteps').innerHTML = (t.steps && t.steps.length ? `<b>Cómo proceder</b><ol>${t.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '') +
       (t.legalDue ? `<div class="notice">Plazo legal: vence el <b>${esc(fmtDate(t.legalDue))}</b> (radicado ${esc(fmtDate(t.received))}).</div>` : '') +
@@ -1909,8 +2257,9 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
   checkReminders();
   function dailySummary() {
   if (store.get('lastDaily', '') !== todayStr()) {
-    const open = tasks.filter(t => t.status !== 'done'), td = todayStr();
-    const msg = `${open.length} pendientes · ${open.filter(t => t.due === td).length} vencen hoy · ${open.filter(t => t.due && t.due < td).length} vencidas · ${tasks.filter(t => t.status === 'review').length} esperan tu aprobación`;
+    const open = tasks.filter(t => t.status !== 'done' && t.kind !== 'comite'), td = todayStr();
+    const cmt = tasks.filter(t => t.kind === 'comite' && t.estado !== 'resuelto');
+    const msg = `${open.length} tareas pendientes · ${open.filter(t => t.due === td).length} para hoy · ${open.filter(t => t.due && t.due < td).length} vencidas · ${cmt.length} temas de comité abiertos${cmt.some(t => t.estado === 'sinrespuesta') ? ` (${cmt.filter(t => t.estado === 'sinrespuesta').length} sin respuesta)` : ''}`;
     if (!HOST_FRAME && 'Notification' in window && Notification.permission === 'granted') new Notification('Resumen del día – Alianza', { body: msg });
     setTimeout(() => toast('☀️ ' + msg), 600);
     store.set('lastDaily', todayStr());
