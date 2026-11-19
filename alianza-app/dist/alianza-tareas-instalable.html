@@ -616,6 +616,26 @@ h2.red-t { color: var(--rojo); }
 .pd-add { flex-wrap: wrap; }
 .pd-add input[name=t] { flex: 1 1 220px; }
 
+/* ------------------------------------------------ v7: registrar tarea o tema de comité, ficha por proyecto */
+.kind-seg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.kind-seg button { border: 1.5px solid var(--borde); background: var(--blanco); color: var(--texto); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.kind-seg button.active { background: var(--azul); border-color: var(--azul); color: #fff; }
+.cmt-strip { display: flex; align-items: center; gap: 6px; width: 100%; border: 1px dashed var(--dorado); background: var(--dorado-claro); color: var(--texto); border-radius: 12px; padding: 9px 12px; margin: 0 0 12px; font: inherit; font-size: 13.5px; cursor: pointer; text-align: left; }
+.cmt-strip span { margin-left: auto; color: var(--azul); font-weight: 600; }
+.cat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.cat-st { display: inline-flex; align-items: center; gap: 5px; background: var(--blanco); border: 1px solid var(--borde); border-radius: 999px; padding: 5px 10px; font-size: 13px; }
+.cat-st small { color: var(--texto-2); }
+.pd-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.pd-col { background: var(--blanco); border: 1px solid var(--borde); border-radius: 14px; padding: 12px; box-shadow: var(--sombra); min-width: 0; }
+.pd-col > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--azul); }
+.pd-col .pd-add { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.pd-col .pd-add input[name=t] { flex: 1 1 140px; }
+.pd-col .task { padding: 8px 10px; }
+.pd-col .t-title { font-size: 14px; }
+.pd-row { display: grid; gap: 3px; }
+.pd-row b { font-size: 14px; }
+@media (max-width: 1000px) { .pd-cols { grid-template-columns: 1fr; } }
+
 </style>
 </head>
 <body>
@@ -668,7 +688,7 @@ h2.red-t { color: var(--rojo); }
         </label>
       </div>
       <div class="row">
-        <label>Vence<input type="date" name="due"></label>
+        <label>Vence<input type="date" name="due" min="2020-01-01" max="2099-12-31"></label>
         <label>Hora<input type="time" name="time"></label>
       </div>
       <label>Categoría<select name="category"></select></label>
@@ -952,8 +972,10 @@ h2.red-t { color: var(--rojo); }
     clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3200);
   }
 
+  const validDay = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && +d.slice(0, 4) > 2000 && +d.slice(0, 4) < 2100 && !isNaN(new Date(d + 'T12:00:00'));
   function taskDate(t) {
-    if (!t.due) return null;
+    if (!validDay(t.due)) return null;
+    if (t.time && !/^\d{2}:\d{2}$/.test(t.time)) return null;
     return new Date(`${t.due}T${t.time || '09:00'}:00-05:00`); // Bogotá, UTC-5 sin horario de verano
   }
 
@@ -962,7 +984,7 @@ h2.red-t { color: var(--rojo); }
   const icsEsc = s => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m);
 
   function googleCalendarUrl(t) {
-    const start = taskDate(t); if (!start) return null;
+    const start = taskDate(t); if (!start || isNaN(start)) return null;
     const end = new Date(start.getTime() + (t.time ? 60 : 24 * 60) * 60000);
     const dates = t.time
       ? `${icsStamp(start)}/${icsStamp(end)}`
@@ -1019,7 +1041,8 @@ h2.red-t { color: var(--rojo); }
   function taskRow(t) {
     const today = todayStr();
     let dueChip = '';
-    if (t.due) {
+    if (t.due && !validDay(t.due)) dueChip = `<span class="chip red">⚠️ Fecha inválida: ${esc(t.due)} (ábrela para corregir)</span>`;
+    else if (t.due) {
       const cls = t.status !== 'done' && t.due < today ? 'red' : t.due === today ? 'gold' : '';
       dueChip = `<span class="chip ${cls}">📅 ${esc(fmtDate(t.due))}${t.time ? ' · ' + esc(t.time) : ''}</span>`;
     }
@@ -1037,7 +1060,7 @@ h2.red-t { color: var(--rojo); }
         </div>
       </div>
       ${t.status !== 'done' ? `<div class="t-actions">
-        ${t.due ? `<a class="icon-act" href="${esc(googleCalendarUrl(t))}" target="_blank" rel="noopener" title="Agregar a Google Calendar" onclick="event.stopPropagation()">📅</a>` : ''}
+        ${validDay(t.due) && googleCalendarUrl(t) ? `<a class="icon-act" href="${esc(googleCalendarUrl(t))}" target="_blank" rel="noopener" title="Agregar a Google Calendar" onclick="event.stopPropagation()">📅</a>` : ''}
         </div>` : ''}
     </div>`;
   }
@@ -2273,18 +2296,24 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       if (done.length) body += `<button class="btn btn-ghost btn-sm" id="tgDone" style="margin-top:12px">${t.showDone ? 'Ocultar' : 'Ver'} hechas (${done.length})</button>${t.showDone ? done.slice(0, 40).map(taskRow).join('') : ''}`;
     }
     return `<h1>Tareas</h1>
-      <p class="sub">Tus tareas generales, con fecha y aviso. Los temas para comité van en la pestaña <b>Comité</b>.</p>
+      <p class="sub">Elige qué vas a registrar, escríbelo y pulsa Agregar.</p>
       <form id="quickTask" class="quick">
-        <div class="cmd-main"><span class="cmd-ico">＋</span><textarea name="text" rows="1" placeholder="Escribe una tarea… (ej.: llamar a la constructora el viernes a las 10 am)" aria-label="Nueva tarea"></textarea><button class="btn btn-gold">Agregar</button></div>
-        <div class="quick-fields">
+        <div class="kind-seg">${Object.entries(DEST).map(([k, d]) => `<button type="button" class="${(t.kind || 'tarea') === k ? 'active' : ''}" data-kind="${k}">${d.ico} ${d.label}</button>`).join('')}</div>
+        <div class="cmd-main"><span class="cmd-ico">＋</span><textarea name="text" rows="1" placeholder="${(t.kind || 'tarea') === 'tarea' ? 'Escribe una tarea… (ej.: llamar a la constructora el viernes a las 10 am)' : (t.kind === 'alianza' ? 'Tema para el Comité Alianza…' : 'Tema para el comité con la constructora…')}" aria-label="Nuevo registro"></textarea><button class="btn btn-gold">Agregar</button></div>
+        ${(t.kind || 'tarea') !== 'tarea' ? `<div class="quick-fields">
+          <label>Proyecto${t.kind === 'constructora' ? ' (obligatorio)' : ''}<select name="project"><option value="">${t.kind === 'constructora' ? 'Elige…' : 'Detectar'}</option>${projects.map(p => `<option ${t.kind === 'constructora' && p === t.lastProject ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+          <label>Responsable<input name="responsable" placeholder="Opcional"></label>
+          <label>Categoría<select name="category"><option value="">Detectar</option>${catOptions('')}</select></label>
+        </div>` : `<div class="quick-fields">
           <label>Proyecto<select name="project"><option value="">Detectar</option>${projects.map(p => `<option>${esc(p)}</option>`).join('')}</select></label>
-          <label>Fecha<input type="date" name="due"></label>
+          <label>Fecha<input type="date" name="due" min="2020-01-01" max="2099-12-31"></label>
           <label>Hora<input type="time" name="time"></label>
           <label>Aviso<select name="remind"><option value="auto">Automático</option><option value="">Sin aviso</option><option value="0">A la hora</option><option value="30">30 min antes</option><option value="120">2 horas antes</option><option value="1440">1 día antes</option></select></label>
           <label>Categoría<select name="category"><option value="">Detectar</option>${catOptions('')}</select></label>
           <label>Prioridad<select name="priority"><option value="media">Media</option><option value="alta">Alta</option><option value="baja">Baja</option></select></label>
-        </div>
+        </div>`}
       </form>
+      ${(() => { const o = comiteItems().filter(x => x.estado !== 'resuelto'); const c = o.filter(x => cmtDest(x) === 'constructora').length, a = o.length - c; return o.length ? `<button class="cmt-strip" id="goCmt">🗂️ Temas de comité abiertos: <b>${c}</b> con constructora · <b>${a}</b> Alianza <span>Ver Comité →</span></button>` : ''; })()}
       <div class="toolbar tareas-bar">
         <div class="seg seg-sm"><button class="${t.mode === 'lista' ? 'active' : ''}" data-mode="lista">Lista</button><button class="${t.mode === 'tablero' ? 'active' : ''}" data-mode="tablero">Tablero</button></div>
         <select id="tCat"><option value="">Todas las categorías</option>${CAT_KEYS.map(k => `<option value="${k}" ${k === t.cat ? 'selected' : ''}>${CATS[k].ico} ${esc(CATS[k].label)}</option>`).join('')}</select>
@@ -2300,13 +2329,24 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     bindTaskEvents(root);
     const f = $('#quickTask', root), ta = f.text;
     const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'; };
-    ta.oninput = () => { grow(); const w = parseWhen(ta.value); if (w.due && !f.due.dataset.touched) f.due.value = w.due; if (w.time && !f.time.dataset.touched) f.time.value = w.time; };
-    f.due.oninput = () => f.due.dataset.touched = '1'; f.time.oninput = () => f.time.dataset.touched = '1';
+    const isTask = (ui.tareas.kind || 'tarea') === 'tarea';
+    root.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { const keep = ta.value; ui.tareas.kind = b.dataset.kind; renderView(); const n = $('#quickTask textarea'); n.value = keep; n.focus(); });
+    const gc = $('#goCmt', root); if (gc) gc.onclick = () => setView('comite');
+    ta.oninput = () => { grow(); if (!isTask) return; const w = parseWhen(ta.value); if (w.due && !f.due.dataset.touched) f.due.value = w.due; if (w.time && !f.time.dataset.touched) f.time.value = w.time; };
+    if (isTask) { f.due.oninput = () => f.due.dataset.touched = '1'; f.time.oninput = () => f.time.dataset.touched = '1'; }
     ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } };
     f.onsubmit = e => {
       e.preventDefault();
       const text = ta.value.trim(); if (!text) return ta.focus();
+      if (!isTask) {
+        const kind = ui.tareas.kind, project = f.project.value || matchProject(text);
+        if (kind === 'constructora' && (!project || project === 'General / AGI')) { f.project.focus(); return toast('Elige el proyecto del comité con constructora.'); }
+        const nt = newComite({ title: text, project, comite: kind, responsable: f.responsable.value.trim(), category: f.category.value });
+        ui.tareas.lastProject = f.project.value;
+        toast(`Agregado al ${comiteOf(nt)}.`); renderView(); setTimeout(() => $('#quickTask textarea')?.focus(), 0); return;
+      }
       const w = parseWhen(text), due = f.due.value || w.due, time = f.time.value || w.time;
+      if (due && !validDay(due)) return toast('La fecha no es válida. Revisa el año.');
       const remind = f.remind.value === 'auto' ? (due ? (time ? '30' : '0') : '') : f.remind.value;
       tasks.push({ id: uid(), created: Date.now(), status: 'todo', title: text.split('\n')[0].slice(0, 160), notes: text.includes('\n') ? text : '', project: f.project.value || matchProject(text), category: f.category.value || guessCat(text), priority: f.priority.value, due, time, remind });
       saveTasks(); toast(due ? `Tarea guardada para ${fmtDate(due)}${time ? ' a las ' + time : ''}${remind !== '' ? ' con aviso' : ''}.` : 'Tarea guardada.');
@@ -2418,7 +2458,14 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
   const isComite = t => t.kind === 'comite';
   const generalTasks = () => tasks.filter(t => !isComite(t));
   const comiteItems = () => tasks.filter(isComite);
-  const comiteOf = t => !t.project || t.project === 'General / AGI' ? 'Comité Alianza' : `Comité ${t.project}`;
+  // Cada tema va al Comité Alianza (interno) o al comité con la constructora del proyecto.
+  const cmtDest = t => t.comite || (t.project && t.project !== 'General / AGI' ? 'constructora' : 'alianza');
+  const comiteOf = t => cmtDest(t) === 'constructora' && t.project && t.project !== 'General / AGI' ? `Comité constructora · ${t.project}` : 'Comité Alianza';
+  const DEST = { tarea: { label: 'Tarea', ico: '✓' }, constructora: { label: 'Comité constructora', ico: '🏗️' }, alianza: { label: 'Comité Alianza', ico: '🤝' } };
+  function newComite({ title, project, comite, responsable = '', category = '' }) {
+    const t = { id: uid(), kind: 'comite', comite, created: Date.now(), title: title.slice(0, 200), project: project || 'General / AGI', responsable, category: category || guessCat(title), estado: 'pendiente', status: 'todo', history: [{ t: Date.now(), type: 'creado', text: 'Tema creado' }] };
+    tasks.push(t); saveTasks(); return t;
+  }
 
   // Semáforo de los temas de comité
   const CST = {
@@ -2445,8 +2492,9 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     list.forEach(t => (groups[comiteOf(t)] = groups[comiteOf(t)] || []).push(t));
     const counts = Object.fromEntries(Object.keys(CST).map(k => [k, items.filter(t => (!c.which || comiteOf(t) === c.which) && t.estado === k).length]));
     return `<h1>Comité</h1>
-      <p class="sub">Temas para llevar al comité. Los generales van al <b>Comité Alianza</b>; los de un proyecto, al comité de ese proyecto.</p>
+      <p class="sub">Temas para llevar al <b>Comité Alianza</b> o al <b>comité con la constructora</b> de cada proyecto.</p>
       <form id="cmtAdd" class="quick">
+        <div class="kind-seg">${['constructora', 'alianza'].map(k => `<button type="button" class="${(ui.comite.dest || 'constructora') === k ? 'active' : ''}" data-dest="${k}">${DEST[k].ico} ${DEST[k].label}</button>`).join('')}</div>
         <div class="cmd-main"><span class="cmd-ico">＋</span><textarea name="title" rows="1" placeholder="Nuevo tema para comité…" aria-label="Nuevo tema para comité"></textarea><button class="btn btn-gold">Agregar</button></div>
         <div class="quick-fields">
           <label>Proyecto<select name="project"><option value="">Detectar</option>${projects.map(p => `<option>${esc(p)}</option>`).join('')}</select></label>
@@ -2484,11 +2532,13 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); f.requestSubmit(); } };
     f.onsubmit = e => {
       e.preventDefault(); const title = ta.value.trim(); if (!title) return ta.focus();
-      const project = f.project.value || matchProject(title);
-      tasks.push({ id: uid(), kind: 'comite', created: Date.now(), title: title.slice(0, 200), project, responsable: f.responsable.value.trim(), category: f.category.value || guessCat(title), estado: 'pendiente', status: 'todo', history: [{ t: Date.now(), type: 'creado', text: 'Tema creado' }] });
-      saveTasks(); toast(`Agregado al ${comiteOf({ project })}.`); renderView(); setTimeout(() => $('#cmtAdd textarea')?.focus(), 0);
+      const project = f.project.value || matchProject(title), comite = ui.comite.dest || 'constructora';
+      if (comite === 'constructora' && project === 'General / AGI') return toast('Elige el proyecto: el comité con constructora es de un proyecto.');
+      const nt = newComite({ title, project, comite, responsable: f.responsable.value.trim(), category: f.category.value });
+      toast(`Agregado al ${comiteOf(nt)}.`); renderView(); setTimeout(() => $('#cmtAdd textarea')?.focus(), 0);
     };
     root.querySelectorAll('[data-est]').forEach(b => b.onclick = () => { ui.comite.estado = b.dataset.est; renderView(); });
+    root.querySelectorAll('[data-dest]').forEach(b => b.onclick = () => { ui.comite.dest = b.dataset.dest; root.querySelectorAll('[data-dest]').forEach(x => x.classList.toggle('active', x === b)); });
     $('#cWhich', root).onchange = e => { ui.comite.which = e.target.value; renderView(); };
     const q = $('#cQ', root); q.oninput = e => { ui.comite.q = e.target.value; renderView(); const n = $('#cQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
     root.querySelectorAll('[data-cmt]').forEach(el => { el.onclick = () => openComite(el.dataset.cmt); el.onkeydown = e => { if (e.key === 'Enter') openComite(el.dataset.cmt); }; });
@@ -2509,6 +2559,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
         <div class="row"><label>Proyecto<select name="project">${projects.map(p => `<option ${p === t.project ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
           <label>Responsable<input name="responsable" value="${esc(t.responsable || '')}" placeholder="Opcional"></label></div>
         <div class="row"><label>Categoría<select name="category">${catOptions(t.category || 'otros')}</select></label>
+          <label>Comité<select name="comite"><option value="constructora" ${cmtDest(t) === 'constructora' ? 'selected' : ''}>🏗️ Con la constructora</option><option value="alianza" ${cmtDest(t) === 'alianza' ? 'selected' : ''}>🤝 Alianza</option></select></label>
           <label>Estado<select name="estado">${Object.entries(CST).map(([k, s]) => `<option value="${k}" ${k === (t.estado || 'pendiente') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label></div>
       </form>
       <div class="toolbar"><button class="btn btn-primary btn-sm" id="cdPresent">✓ Presentado hoy en comité</button>${t.mail?.url ? `<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="${esc(t.mail.url)}">Abrir correo de origen</a>` : ''}<span class="spacer"></span><button class="btn btn-ghost btn-sm danger" id="cdDel">Eliminar tema</button></div>
@@ -2535,7 +2586,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     const save = () => {
       const f = $('#cdForm', d);
       const before = t.estado;
-      Object.assign(t, { title: f.title.value.trim() || t.title, project: f.project.value, responsable: f.responsable.value.trim(), category: f.category.value, estado: f.estado.value });
+      Object.assign(t, { title: f.title.value.trim() || t.title, project: f.project.value, responsable: f.responsable.value.trim(), category: f.category.value, estado: f.estado.value, comite: f.comite.value });
       t.status = t.estado === 'resuelto' ? 'done' : 'todo'; if (t.estado === 'resuelto' && before !== 'resuelto') t.doneAt = Date.now();
       if (before !== t.estado) (t.history = t.history || []).push({ t: Date.now(), type: 'estado', text: `Estado: ${CST[t.estado].label}` });
       saveTasks();
@@ -2604,7 +2655,8 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       const nuevos = rows.filter(x => !known.has(x.id));
       nuevos.forEach(x => {
         const title = x.subject.replace(/^(re|rv|fw|fwd)\s*:\s*/gi, '').trim();
-        tasks.push({ id: uid(), kind: 'comite', created: Date.now(), title, project: matchProject(x.subject + ' ' + x.snippet), responsable: '', category: guessCat(x.subject + ' ' + x.snippet), estado: 'pendiente', status: 'todo', mail: { id: x.id, url: x.url, subject: x.subject },
+        const pj = matchProject(x.subject + ' ' + x.snippet);
+        tasks.push({ id: uid(), kind: 'comite', comite: pj === 'General / AGI' ? 'alianza' : 'constructora', created: Date.now(), title, project: pj, responsable: '', category: guessCat(x.subject + ' ' + x.snippet), estado: 'pendiente', status: 'todo', mail: { id: x.id, url: x.url, subject: x.subject },
           history: [{ t: Date.now(), type: 'creado', text: 'Ingresó desde Gmail (etiqueta PENDIENTES COMITE)' }, { t: Date.now(), type: 'avance', text: `Correo de ${x.from} (${x.date}): ${x.snippet}`, mail: { subject: x.subject, url: x.url } }] });
       });
       if (nuevos.length) saveTasks();
@@ -2683,25 +2735,30 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
       <div class="proj-grid">${cards.filter(c => !ui.pq || norm(c.p).includes(norm(ui.pq))).map(c => `<button class="proj-card" data-proj="${esc(c.p)}">
         <div class="pc-head"><b>${esc(c.p)}</b><span class="pc-n">${c.open.length}</span></div>
         <div class="pc-cats">${CAT_KEYS.filter(k => k !== 'otros').map(k => { const st = catState(c.items.filter(t => (t.category || guessCat(t.title)) === k)); return `<span class="pc-cat" title="${esc(CATS[k].label)}: ${esc(st.label)}"><span class="dot" style="background:${st.color}"></span>${CATS[k].ico}</span>`; }).join('')}</div>
-        <small>${c.open.filter(isComite).length} temas de comité · ${c.open.filter(t => !isComite(t)).length} tareas</small>
+        <small>✓ ${c.open.filter(t => !isComite(t)).length} tareas · 🏗️ ${c.open.filter(t => isComite(t) && cmtDest(t) === 'constructora').length} constructora · 🤝 ${c.open.filter(t => isComite(t) && cmtDest(t) === 'alianza').length} Alianza</small>
       </button>`).join('')}</div>`;
   };
   function projectDetail(p) {
     const items = tasks.filter(t => t.project === p);
-    const sec = k => {
-      const list = items.filter(t => (t.category || guessCat(t.title)) === k);
-      const st = catState(list), open = list.filter(t => isComite(t) ? t.estado !== 'resuelto' : t.status !== 'done');
-      return `<section class="pd-sec"><header><span class="dot" style="background:${st.color}"></span><b>${CATS[k].ico} ${esc(CATS[k].label)}</b><span class="sub">${esc(st.label)}</span>
-          <button class="btn btn-ghost btn-sm" data-addcat="${k}">+ Tarea</button></header>
-        ${open.length ? open.map(t => isComite(t) ? `<div class="pd-row" data-cmt="${esc(t.id)}"><span class="sema-pill sm" style="background:${CST[t.estado].bg};color:${CST[t.estado].color}">${CST[t.estado].label}</span>${esc(t.title)} <small class="sub">· Comité</small></div>` : taskRow(t)).join('') : '<p class="sub" style="margin:4px 0">Nada pendiente.</p>'}
-        <form class="pd-add" data-form="${k}" hidden><input name="t" placeholder="Nueva tarea de ${esc(CATS[k].label.toLowerCase())}…"><input type="date" name="due" aria-label="Fecha"><button class="btn btn-gold btn-sm">Agregar</button></form>
+    const mine = items.filter(t => !isComite(t) && t.status !== 'done').sort((x, y) => (x.due || '9').localeCompare(y.due || '9'));
+    const cmt = d => items.filter(t => isComite(t) && cmtDest(t) === d && t.estado !== 'resuelto');
+    const cmtRow = t => { const s2 = CST[t.estado] || CST.pendiente, la = lastAvance(t); return `<div class="pd-row" data-cmt="${esc(t.id)}"><div><span class="sema-pill sm" style="background:${s2.bg};color:${s2.color}">${s2.label}</span><b>${esc(t.title)}</b></div>${la ? `<small class="sub">${esc(fmtDate(ymd(new Date(la.t).toISOString())))}: ${esc(la.text.slice(0, 110))}</small>` : ''}</div>`; };
+    const col = (key, title, ico, list, rows) => `<section class="pd-col">
+        <header><b>${ico} ${title}</b><span class="pc-n">${list.length}</span></header>
+        <form class="pd-add" data-add="${key}"><input name="t" placeholder="${key === 'tarea' ? 'Nueva tarea de seguimiento…' : 'Nuevo tema…'}" aria-label="${title}">${key === 'tarea' ? '<input type="date" name="due" min="2020-01-01" max="2099-12-31" aria-label="Fecha">' : ''}<button class="btn btn-gold btn-sm">+</button></form>
+        ${list.length ? rows : '<p class="sub" style="margin:6px 0">Nada pendiente.</p>'}
       </section>`;
-    };
+    const cats = CAT_KEYS.filter(k => k !== 'otros').map(k => { const st = catState(items.filter(t => (t.category || guessCat(t.title)) === k)); return `<span class="cat-st" title="${esc(st.label)}"><span class="dot" style="background:${st.color}"></span>${CATS[k].ico} ${esc(CATS[k].label)} <small>${esc(st.label)}</small></span>`; }).join('');
     return `<div class="toolbar"><button class="btn btn-ghost btn-sm" id="pdBack">← Proyectos</button></div>
-      <h1>${esc(p)}</h1><p class="sub">Comité: ${esc(comiteOf({ project: p }))}</p>
-      <div class="toolbar"><button class="btn btn-ghost btn-sm" id="pdMail">✉️ Ver correos del proyecto</button><button class="btn btn-ghost btn-sm" id="pdCmt">Ver sus temas de comité</button></div>
-      <div id="pdMailRes"></div>
-      <div class="pd-grid">${CAT_KEYS.map(sec).join('')}</div>`;
+      <h1>${esc(p)}</h1>
+      <div class="cat-strip">${cats}</div>
+      <div class="pd-cols">
+        ${col('tarea', 'Mis tareas de seguimiento', '✓', mine, mine.map(taskRow).join(''))}
+        ${col('constructora', 'Comité con constructora', '🏗️', cmt('constructora'), cmt('constructora').map(cmtRow).join(''))}
+        ${col('alianza', 'Comité Alianza', '🤝', cmt('alianza'), cmt('alianza').map(cmtRow).join(''))}
+      </div>
+      <div class="toolbar" style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="pdMail">✉️ Ver correos del proyecto</button></div>
+      <div id="pdMailRes"></div>`;
   }
   views.proyectos.after = root => {
     const q = $('#pQ', root); if (q) q.oninput = e => { ui.pq = e.target.value; renderView(); const n = $('#pQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
@@ -2709,14 +2766,17 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
     const back = $('#pdBack', root); if (back) back.onclick = () => { ui.proyecto = null; renderView(); };
     bindTaskEvents(root);
     root.querySelectorAll('[data-cmt]').forEach(el => el.onclick = () => openComite(el.dataset.cmt));
-    root.querySelectorAll('[data-addcat]').forEach(b => b.onclick = () => { const f = root.querySelector(`[data-form="${b.dataset.addcat}"]`); f.hidden = !f.hidden; if (!f.hidden) f.t.focus(); });
-    root.querySelectorAll('[data-form]').forEach(f => f.onsubmit = e => {
-      e.preventDefault(); const title = f.t.value.trim(); if (!title) return;
-      const w = parseWhen(title), due = f.due.value || w.due;
-      tasks.push({ id: uid(), created: Date.now(), status: 'todo', title, project: ui.proyecto, category: f.dataset.form, priority: 'media', due, time: w.time, remind: due ? '0' : '', notes: '' });
-      saveTasks(); renderView();
+    root.querySelectorAll('[data-add]').forEach(f => f.onsubmit = e => {
+      e.preventDefault(); const title = f.t.value.trim(); if (!title) return f.t.focus();
+      const kind = f.dataset.add;
+      if (kind === 'tarea') {
+        const w = parseWhen(title), due = (f.due && f.due.value) || w.due;
+        if (due && !validDay(due)) return toast('La fecha no es válida. Revisa el año.');
+        tasks.push({ id: uid(), created: Date.now(), status: 'todo', title, project: ui.proyecto, category: guessCat(title), priority: 'media', due, time: w.time, remind: due ? '0' : '', notes: '' });
+        saveTasks();
+      } else newComite({ title, project: ui.proyecto, comite: kind });
+      renderView(); setTimeout(() => { const n = document.querySelector(`[data-add="${kind}"] input[name=t]`); if (n) n.focus(); }, 0);
     });
-    const pc = $('#pdCmt', root); if (pc) pc.onclick = () => { ui.comite.which = comiteOf({ project: ui.proyecto }); ui.comite.estado = 'abiertos'; setView('comite'); };
     const pm = $('#pdMail', root); if (pm) pm.onclick = async () => {
       const res = $('#pdMailRes', root); res.innerHTML = '<p class="sub">Buscando correos…</p>';
       try {
@@ -2924,6 +2984,7 @@ Incluye en "derechos" solo derechos de petición, tutelas o PQR. En "pendientes"
   form.addEventListener('submit', e => {
     if (e.submitter?.value !== 'save') return;
     const data = Object.fromEntries(new FormData(form));
+    if (data.due && !validDay(data.due)) { e.preventDefault(); toast('La fecha no es válida. Revisa el año.'); return; }
     if (editingId) {
       const t = tasks.find(x => x.id === editingId);
       if (t.due !== data.due || t.time !== data.time || t.remind !== data.remind) t.notified = false;

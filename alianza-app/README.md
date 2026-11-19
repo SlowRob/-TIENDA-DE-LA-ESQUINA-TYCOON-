@@ -5,26 +5,25 @@ App de seguimiento de la **Coordinación de Proyectos de Alianza Grupo Inmobilia
 La app tiene cuatro pestañas: **Tareas · Comité · Proyectos · Correo**. Los agentes de IA están en pausa: su código se conserva, pero no aparecen en la app.
 
 ## Tareas
-- Aquí van tus tareas generales; es la pantalla de inicio.
-- La barra toma sola la fecha y la hora que escribas ("viernes a las 10 am").
-- Cada tarea lleva una **categoría**: Presupuesto y contabilidad, Asambleas y consejo, Entregas y pólizas, Derechos de petición u Otros. La app la propone según el texto, y puedes cambiarla.
-- Solo generan avisos. Se ven en lista o en tablero, y se pueden agregar a Google Calendar.
+- Es la pantalla de inicio. Arriba eliges qué vas a registrar:
+  - **✓ Tarea:** una tarea general, con fecha, hora, aviso, categoría y prioridad. La app toma sola la fecha y la hora que escribas ("viernes a las 10 am").
+  - **🏗️ Comité constructora:** un tema para el comité con la constructora de un proyecto. Hay que elegir el proyecto.
+  - **🤝 Comité Alianza:** un tema para el comité interno de Alianza, general o de un proyecto.
+- Una franja muestra cuántos temas de comité están abiertos y lleva a la pestaña Comité.
+- Si una fecha queda mal escrita (por ejemplo, con el año 32026), la tarea se marca en rojo para corregirla, en lugar de dañar la lista. Además, los campos de fecha solo aceptan años entre 2020 y 2099.
 
 ## Comité
-- **A qué comité va cada tema:** si es General, al **Comité Alianza**; si es de un proyecto, al **Comité de ese proyecto**. Los comités no tienen fecha fija.
 - **Semáforo:** Pendiente, En curso, Sin respuesta o Resuelto. Los temas que llevan 14 días sin avances se marcan.
 - **Historial de avances con fecha.** Cada avance se puede escribir, dictar con el teclado, llevar adjuntos o tomarse de un correo de Gmail. También queda registrado el botón «Presentado hoy en comité».
-- **Gmail:** los correos con la etiqueta **PENDIENTES COMITE** entran solos como temas, sin duplicarse. Se revisan al abrir Comité (como máximo una vez por hora), al actualizar el resumen del correo o con el botón «Traer de Gmail».
-- **Exportar** la lista filtrada a **Excel**, **PDF** (con el encabezado de Alianza) o **texto** listo para pegar en un correo o en WhatsApp.
+- Cada tema indica a qué comité va (constructora o Alianza), y se puede cambiar en su detalle.
+- **Gmail:** los correos con la etiqueta **PENDIENTES COMITE** entran solos como temas, sin duplicarse.
+- **Exportar** a Excel, PDF o texto.
 
 ## Proyectos
-- Cada proyecto tiene una ficha con 4 secciones (presupuesto, asambleas, entregas y pólizas, derechos de petición) más Otros.
-- Cada sección tiene semáforo:
-  - verde: al día;
-  - amarillo: pendiente;
-  - rojo: vencido o sin respuesta.
-- En cada sección ves sus tareas y temas de comité, y puedes agregar tareas.
-- «Ver correos del proyecto» busca en su carpeta de Gmail, y cualquier correo se puede convertir en tema de comité.
+Al abrir un proyecto ves:
+- una franja con el semáforo de sus 4 actividades (presupuesto, asambleas, entregas y pólizas, derechos de petición);
+- tres columnas, cada una con su campo para agregar: **Mis tareas de seguimiento**, **Comité con constructora** y **Comité Alianza**;
+- el botón «Ver correos del proyecto».
 
 ## Correo (Sofía)
 - Resumen de los no leídos: derechos de petición con su vencimiento, citaciones y pendientes.

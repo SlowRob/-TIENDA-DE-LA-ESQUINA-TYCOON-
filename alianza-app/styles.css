@@ -604,3 +604,23 @@ h2.red-t { color: var(--rojo); }
 }
 .pd-add { flex-wrap: wrap; }
 .pd-add input[name=t] { flex: 1 1 220px; }
+
+/* ------------------------------------------------ v7: registrar tarea o tema de comité, ficha por proyecto */
+.kind-seg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.kind-seg button { border: 1.5px solid var(--borde); background: var(--blanco); color: var(--texto); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.kind-seg button.active { background: var(--azul); border-color: var(--azul); color: #fff; }
+.cmt-strip { display: flex; align-items: center; gap: 6px; width: 100%; border: 1px dashed var(--dorado); background: var(--dorado-claro); color: var(--texto); border-radius: 12px; padding: 9px 12px; margin: 0 0 12px; font: inherit; font-size: 13.5px; cursor: pointer; text-align: left; }
+.cmt-strip span { margin-left: auto; color: var(--azul); font-weight: 600; }
+.cat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.cat-st { display: inline-flex; align-items: center; gap: 5px; background: var(--blanco); border: 1px solid var(--borde); border-radius: 999px; padding: 5px 10px; font-size: 13px; }
+.cat-st small { color: var(--texto-2); }
+.pd-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.pd-col { background: var(--blanco); border: 1px solid var(--borde); border-radius: 14px; padding: 12px; box-shadow: var(--sombra); min-width: 0; }
+.pd-col > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--azul); }
+.pd-col .pd-add { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.pd-col .pd-add input[name=t] { flex: 1 1 140px; }
+.pd-col .task { padding: 8px 10px; }
+.pd-col .t-title { font-size: 14px; }
+.pd-row { display: grid; gap: 3px; }
+.pd-row b { font-size: 14px; }
+@media (max-width: 1000px) { .pd-cols { grid-template-columns: 1fr; } }
